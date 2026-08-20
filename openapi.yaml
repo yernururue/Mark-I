@@ -1,0 +1,1022 @@
+openapi: 3.1.0
+info:
+  title: Mark-I API
+  description: |
+    AI-powered developer growth agent REST API.
+    This is the formal API contract between frontend and backend.
+    See docs/API.md for human-readable documentation.
+  version: 1.0.0
+  contact:
+    name: Mark-I Team
+
+servers:
+  - url: https://{backend-url}
+    description: Cloud Run backend
+    variables:
+      backend-url:
+        default: localhost:8000
+
+tags:
+  - name: Health
+    description: Health check
+  - name: User
+    description: User profile management
+  - name: Dashboard
+    description: Dashboard data
+  - name: Skills
+    description: Skill tracking
+  - name: Observations
+    description: Observation feed
+  - name: Chat
+    description: Unified chat with AI agent
+  - name: GitHub
+    description: GitHub integration
+  - name: Telegram
+    description: Telegram integration
+  - name: Webhooks
+    description: External webhook receivers
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      tags: [Health]
+      summary: Health check
+      description: Returns service health status. No authentication required.
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/me:
+    get:
+      operationId: getProfile
+      tags: [User]
+      summary: Get user profile
+      description: Get the authenticated user's profile.
+      security:
+        - firebaseAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      operationId: createProfile
+      tags: [User]
+      summary: Create user profile (onboarding)
+      description: Create user profile during onboarding. Fails if profile already exists.
+      security:
+        - firebaseAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProfileRequest'
+      responses:
+        '201':
+          description: Profile created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    patch:
+      operationId: updateProfile
+      tags: [User]
+      summary: Update user profile
+      description: Update profile fields. Only provided fields are updated.
+      security:
+        - firebaseAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/dashboard:
+    get:
+      operationId: getDashboard
+      tags: [Dashboard]
+      summary: Get dashboard data
+      description: Get aggregated dashboard data (skills, observations, decisions, stats).
+      security:
+        - firebaseAuth: []
+      parameters:
+        - name: observationLimit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 50
+          description: Max recent observations to return
+        - name: decisionLimit
+          in: query
+          schema:
+            type: integer
+            default: 5
+            minimum: 1
+            maximum: 20
+          description: Max recent decisions to return
+      responses:
+        '200':
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/skills:
+    get:
+      operationId: getSkills
+      tags: [Skills]
+      summary: Get all skills
+      description: Get all skill scores for the authenticated user.
+      security:
+        - firebaseAuth: []
+      responses:
+        '200':
+          description: Skills list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/observations:
+    get:
+      operationId: getObservations
+      tags: [Observations]
+      summary: Get observations
+      description: Get observations with pagination and optional filters.
+      security:
+        - firebaseAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Max items per page
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor from previous response
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [github, opportunity, chat]
+          description: Filter by observation source
+        - name: concept
+          in: query
+          schema:
+            type: string
+          description: Filter by concept name
+      responses:
+        '200':
+          description: Paginated observations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservationsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/chat:
+    post:
+      operationId: sendChatMessage
+      tags: [Chat]
+      summary: Send message to AI agent
+      description: Send a message to the AI agent. Returns the agent's response.
+      security:
+        - firebaseAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Agent response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/messages:
+    get:
+      operationId: getMessages
+      tags: [Chat]
+      summary: Get chat history
+      description: Get message history with pagination.
+      security:
+        - firebaseAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+          description: Max messages to return
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor
+        - name: channel
+          in: query
+          schema:
+            type: string
+            enum: [web, telegram]
+          description: Filter by channel
+      responses:
+        '200':
+          description: Paginated messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessagesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/github/auth-url:
+    get:
+      operationId: getGithubAuthUrl
+      tags: [GitHub]
+      summary: Get GitHub OAuth URL
+      description: Get the GitHub OAuth authorization URL to redirect the user to.
+      security:
+        - firebaseAuth: []
+      responses:
+        '200':
+          description: OAuth authorization URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubAuthUrlResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/github/callback:
+    post:
+      operationId: githubOAuthCallback
+      tags: [GitHub]
+      summary: Handle GitHub OAuth callback
+      description: Exchange the authorization code for an access token.
+      security:
+        - firebaseAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitHubCallbackRequest'
+      responses:
+        '200':
+          description: GitHub connected, repos available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubCallbackResponse'
+        '400':
+          description: Invalid code or state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/github/repos:
+    get:
+      operationId: getGithubRepos
+      tags: [GitHub]
+      summary: Get available repos
+      description: Get list of repos available to connect.
+      security:
+        - firebaseAuth: []
+      responses:
+        '200':
+          description: Available repos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubReposResponse'
+        '400':
+          description: GitHub not connected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      operationId: selectGithubRepos
+      tags: [GitHub]
+      summary: Select repos to monitor
+      description: Select repos to monitor. Registers/removes webhooks accordingly.
+      security:
+        - firebaseAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectReposRequest'
+      responses:
+        '200':
+          description: Repos connected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectReposResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/github/disconnect:
+    delete:
+      operationId: disconnectGithub
+      tags: [GitHub]
+      summary: Disconnect GitHub
+      description: Disconnect GitHub entirely. Removes webhooks and token.
+      security:
+        - firebaseAuth: []
+      responses:
+        '200':
+          description: GitHub disconnected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  disconnected:
+                    type: boolean
+                    example: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/telegram/link:
+    post:
+      operationId: generateTelegramLinkCode
+      tags: [Telegram]
+      summary: Generate Telegram link code
+      description: Generate a temporary code for linking Telegram account.
+      security:
+        - firebaseAuth: []
+      responses:
+        '200':
+          description: Link code generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelegramLinkResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Telegram already linked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/telegram/unlink:
+    delete:
+      operationId: unlinkTelegram
+      tags: [Telegram]
+      summary: Unlink Telegram
+      description: Unlink the Telegram account.
+      security:
+        - firebaseAuth: []
+      responses:
+        '200':
+          description: Telegram unlinked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  unlinked:
+                    type: boolean
+                    example: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/webhooks/github:
+    post:
+      operationId: receiveGithubWebhook
+      tags: [Webhooks]
+      summary: Receive GitHub webhook
+      description: |
+        Receive GitHub webhook events. Validated via HMAC SHA-256 signature.
+        NOT called by frontend — called by GitHub.
+      parameters:
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          schema:
+            type: string
+          description: HMAC SHA-256 signature
+        - name: X-GitHub-Event
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [push, pull_request, pull_request_review, issues, issue_comment, create]
+          description: GitHub event type
+        - name: X-GitHub-Delivery
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Unique delivery ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Raw GitHub webhook payload (varies by event type)
+      responses:
+        '200':
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: boolean
+                    example: true
+                  deliveryId:
+                    type: string
+                    example: "delivery-id-xxx"
+        '401':
+          description: Invalid signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/webhooks/telegram:
+    post:
+      operationId: receiveTelegramWebhook
+      tags: [Webhooks]
+      summary: Receive Telegram webhook
+      description: |
+        Receive Telegram bot updates. Validated via secret token.
+        NOT called by frontend — called by Telegram.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Telegram Update object
+      responses:
+        '200':
+          description: Update processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+
+components:
+  securitySchemes:
+    firebaseAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase ID Token
+      description: Firebase Auth ID token obtained via firebase.auth().currentUser.getIdToken()
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid Firebase token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Missing or invalid authentication token
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: NOT_FOUND
+              message: User profile not found
+
+    Conflict:
+      description: Resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: CONFLICT
+              message: Profile already exists
+
+    ValidationError:
+      description: Invalid request body
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: "Invalid field: goal must be one of 'job', 'leetcode', or 'stack:<name>'"
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: ERROR_CODE
+            message:
+              type: string
+              example: Human-readable error description
+
+    HealthResponse:
+      type: object
+      required: [status, version, timestamp]
+      properties:
+        status:
+          type: string
+          example: ok
+        version:
+          type: string
+          example: "1.0.0"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-08-19T14:00:00Z"
+
+    UserProfile:
+      type: object
+      required: [uid, email, displayName, goal, intensity, telegramLinked, githubConnected, createdAt, updatedAt, onboardingCompleted]
+      properties:
+        uid:
+          type: string
+          example: firebase-uid-123
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        displayName:
+          type: string
+          example: Alex Dev
+        goal:
+          type: string
+          example: job
+        intensity:
+          type: string
+          enum: [chill, normal, brutal]
+          example: normal
+        language:
+          type: string
+          enum: [en, ru]
+          example: en
+        telegramLinked:
+          type: boolean
+          example: true
+        telegramUsername:
+          type: string
+          nullable: true
+          example: "@alexdev"
+        githubConnected:
+          type: boolean
+          example: true
+        githubUsername:
+          type: string
+          nullable: true
+          example: alexdev
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        onboardingCompleted:
+          type: boolean
+          example: true
+
+    CreateProfileRequest:
+      type: object
+      required: [displayName, goal, intensity]
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Alex Dev
+        goal:
+          type: string
+          description: "Learning goal: 'job', 'leetcode', or 'stack:<name>'"
+          example: job
+        intensity:
+          type: string
+          enum: [chill, normal, brutal]
+          example: normal
+        language:
+          type: string
+          enum: [en, ru]
+          default: en
+          example: en
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        goal:
+          type: string
+        intensity:
+          type: string
+          enum: [chill, normal, brutal]
+        language:
+          type: string
+          enum: [en, ru]
+
+    DashboardResponse:
+      type: object
+      required: [skills, recentObservations, recentDecisions, stats]
+      properties:
+        skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillSummary'
+        recentObservations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Observation'
+        recentDecisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Decision'
+        stats:
+          $ref: '#/components/schemas/DashboardStats'
+
+    SkillSummary:
+      type: object
+      required: [name, score, trend, lastUpdated]
+      properties:
+        name:
+          type: string
+          example: recursion
+        score:
+          type: number
+          minimum: 0
+          maximum: 10
+          example: 4.5
+        trend:
+          type: string
+          enum: [up, down, stable, new]
+          example: up
+        lastUpdated:
+          type: string
+          format: date-time
+
+    SkillDetail:
+      type: object
+      required: [name, score, trend, observationCount, lastUpdated]
+      properties:
+        name:
+          type: string
+          example: recursion
+        score:
+          type: number
+          minimum: 0
+          maximum: 10
+          example: 4.5
+        trend:
+          type: string
+          enum: [up, down, stable, new]
+          example: up
+        observationCount:
+          type: integer
+          example: 5
+        lastUpdated:
+          type: string
+          format: date-time
+
+    SkillsResponse:
+      type: object
+      required: [skills]
+      properties:
+        skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillDetail'
+
+    Observation:
+      type: object
+      required: [id, source, summary, concept, sentiment, significanceScore, createdAt]
+      properties:
+        id:
+          type: string
+          example: obs-123
+        source:
+          type: string
+          enum: [github, opportunity, chat]
+          example: github
+        summary:
+          type: string
+          example: Implemented recursive tree traversal in PR #42
+        concept:
+          type: string
+          example: recursion
+        sentiment:
+          type: string
+          enum: [positive, negative, neutral]
+          example: positive
+        significanceScore:
+          type: integer
+          minimum: 1
+          maximum: 10
+          example: 7
+        metadata:
+          type: object
+          additionalProperties: true
+          example:
+            repo: alexdev/algorithms
+            event: pull_request
+            ref: "PR #42"
+        createdAt:
+          type: string
+          format: date-time
+
+    ObservationsResponse:
+      type: object
+      required: [observations, hasMore]
+      properties:
+        observations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Observation'
+        nextCursor:
+          type: string
+          nullable: true
+        hasMore:
+          type: boolean
+
+    Decision:
+      type: object
+      required: [id, observationId, action, reason, createdAt]
+      properties:
+        id:
+          type: string
+          example: dec-456
+        observationId:
+          type: string
+          example: obs-123
+        action:
+          type: string
+          enum: [notified, silent]
+          example: notified
+        reason:
+          type: string
+          example: "Significance 7 >= threshold 5 (normal intensity)"
+        createdAt:
+          type: string
+          format: date-time
+
+    DashboardStats:
+      type: object
+      required: [totalObservations, totalSkills, streakDays, lastActivityAt]
+      properties:
+        totalObservations:
+          type: integer
+          example: 23
+        totalSkills:
+          type: integer
+          example: 8
+        streakDays:
+          type: integer
+          example: 5
+        lastActivityAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ChatRequest:
+      type: object
+      required: [message, channel]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          example: Why did you notify me about that last commit?
+        channel:
+          type: string
+          enum: [web, telegram]
+          example: web
+
+    ChatResponse:
+      type: object
+      required: [response, messageId, agentMessageId]
+      properties:
+        response:
+          type: string
+          example: I notified you because your commit showed significant improvement...
+        messageId:
+          type: string
+          description: ID of the stored user message
+          example: msg-789
+        agentMessageId:
+          type: string
+          description: ID of the stored agent response
+          example: msg-790
+
+    Message:
+      type: object
+      required: [id, role, channel, text, createdAt]
+      properties:
+        id:
+          type: string
+          example: msg-789
+        role:
+          type: string
+          enum: [user, agent]
+          example: user
+        channel:
+          type: string
+          enum: [web, telegram]
+          example: web
+        text:
+          type: string
+          example: Why did you notify me about that last commit?
+        createdAt:
+          type: string
+          format: date-time
+
+    MessagesResponse:
+      type: object
+      required: [messages, hasMore]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        nextCursor:
+          type: string
+          nullable: true
+        hasMore:
+          type: boolean
+
+    GitHubAuthUrlResponse:
+      type: object
+      required: [authUrl]
+      properties:
+        authUrl:
+          type: string
+          format: uri
+          example: "https://github.com/login/oauth/authorize?client_id=xxx&redirect_uri=xxx&scope=repo&state=xxx"
+
+    GitHubCallbackRequest:
+      type: object
+      required: [code, state]
+      properties:
+        code:
+          type: string
+          example: github-oauth-code-xxx
+        state:
+          type: string
+          example: state-token-xxx
+
+    GitHubCallbackResponse:
+      type: object
+      required: [githubUsername, repos]
+      properties:
+        githubUsername:
+          type: string
+          example: alexdev
+        repos:
+          type: array
+          items:
+            $ref: '#/components/schemas/GitHubRepo'
+
+    GitHubRepo:
+      type: object
+      required: [fullName, private]
+      properties:
+        fullName:
+          type: string
+          example: alexdev/algorithms
+        private:
+          type: boolean
+          example: false
+        connected:
+          type: boolean
+          description: Only present in GET /repos response
+          example: true
+
+    GitHubReposResponse:
+      type: object
+      required: [repos]
+      properties:
+        repos:
+          type: array
+          items:
+            $ref: '#/components/schemas/GitHubRepo'
+
+    SelectReposRequest:
+      type: object
+      required: [repos]
+      properties:
+        repos:
+          type: array
+          items:
+            type: string
+          example: ["alexdev/algorithms", "alexdev/web-app"]
+
+    SelectReposResponse:
+      type: object
+      required: [connectedRepos, webhooksRegistered]
+      properties:
+        connectedRepos:
+          type: array
+          items:
+            type: string
+          example: ["alexdev/algorithms", "alexdev/web-app"]
+        webhooksRegistered:
+          type: integer
+          example: 2
+
+    TelegramLinkResponse:
+      type: object
+      required: [linkCode, expiresAt, botUsername]
+      properties:
+        linkCode:
+          type: string
+          example: A3X9K2
+        expiresAt:
+          type: string
+          format: date-time
+        botUsername:
+          type: string
+          example: mark1_dev_bot
