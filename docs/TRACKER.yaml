@@ -1,9 +1,11 @@
 project:
-  status: planned
+  status: in-progress
 
 areas:
   backend:
-    status: planned
+    status: in-progress
+    current_plan: backend-mvp
+    notes: "Plan created 2026-08-21, 7 tasks, all pending"
 
   frontend:
     status: planned
@@ -11,4 +13,8 @@ areas:
 integration:
   status: planned
 
-plans: []
+plans:
+  - name: backend-mvp
+    area: backend
+    status: planned
+    created: 2026-08-21
