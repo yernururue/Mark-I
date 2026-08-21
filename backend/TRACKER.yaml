@@ -1,1 +1,29 @@
-plans: []
+plans:
+  - name: backend-mvp
+    path: docs/plans/2026-08-21-backend-mvp/
+    status: planned
+    created: 2026-08-21
+    started:
+    shipped:
+    tasks:
+      - name: project-init
+        file: 01-project-init.md
+        status: pending
+      - name: fastapi-auth-users
+        file: 02-fastapi-auth-users.md
+        status: pending
+      - name: github-integration
+        file: 03-github-integration.md
+        status: pending
+      - name: ai-analysis-skills
+        file: 04-ai-analysis-skills.md
+        status: pending
+      - name: decision-telegram
+        file: 05-decision-telegram.md
+        status: pending
+      - name: unified-chat
+        file: 06-unified-chat.md
+        status: pending
+      - name: opportunities-deploy
+        file: 07-opportunities-deploy.md
+        status: pending
