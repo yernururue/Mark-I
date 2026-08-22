@@ -45,12 +45,9 @@ export default function Header() {
             </Link>
             <button 
               onClick={() => setIsLoginOpen(true)} 
-              className="text-white/80 hover:text-white text-sm transition-colors"
+              className="bg-[#f05638] hover:bg-[#d94a30] text-white px-5 py-2 text-sm font-serif font-bold transition-colors"
             >
               Log in
-            </button>
-            <button className="bg-[#f05638] hover:bg-[#d94a30] text-white px-5 py-2 text-sm font-serif font-bold transition-colors">
-              Sign up
             </button>
           </div>
         </div>
