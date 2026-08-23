@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   signInWithPopup, 
   signInWithEmailAndPassword, 
@@ -12,16 +12,22 @@ import { useRouter } from 'next/navigation';
 interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialIsSignUp?: boolean;
 }
 
-export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
+export default function LoginModal({ isOpen, onClose, initialIsSignUp = false }: LoginModalProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [repeatPassword, setRepeatPassword] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(initialIsSignUp);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  // Reset isSignUp when modal opens with a new initial mode
+  useEffect(() => {
+    setIsSignUp(initialIsSignUp);
+  }, [isOpen, initialIsSignUp]);
 
   if (!isOpen) return null;
 
@@ -76,39 +82,39 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div 
-        className="bg-[#0a0a0a] border border-white/10 w-full max-w-md p-8 relative shadow-2xl"
+        className="bg-[#1C1C1C] border border-white/10 w-full max-w-md p-8 relative shadow-2xl rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button 
           onClick={onClose}
-          className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors"
+          className="absolute top-5 right-5 text-white/40 hover:text-white transition-colors p-2"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
         
-        <div className="text-center mb-8">
-          <h2 className="text-3xl font-serif italic text-white tracking-wide mb-2">
+        <div className="text-center mb-8 mt-2">
+          <h2 className="text-3xl font-sans font-medium text-white tracking-tight mb-2">
             {isSignUp ? "Sign up" : "Log in"}
           </h2>
-          <p className="text-white/50 text-sm">Welcome to Mark-I</p>
+          <p className="text-white/50 text-sm font-sans">Welcome to Mark-I</p>
         </div>
         
-        <form className="flex flex-col gap-5" onSubmit={handleEmailAuth}>
+        <form className="flex flex-col gap-4" onSubmit={handleEmailAuth}>
           <div>
-            <label className="block text-sm text-white/70 mb-2 font-sans">Email</label>
+            <label className="block text-sm text-white/70 mb-2 font-sans font-medium">Email</label>
             <input 
               type="email" 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-[#f05638]/50 transition-colors"
+              className="w-full bg-white/5 border border-white/10 rounded-xl text-white px-4 py-3.5 focus:outline-none focus:border-white/30 transition-colors"
               placeholder="name@company.com"
               required
             />
           </div>
           <div>
-            <label className="block text-sm text-white/70 mb-2 font-sans flex justify-between">
+            <label className="block text-sm text-white/70 mb-2 font-sans font-medium flex justify-between">
               Password
               {!isSignUp && <a href="#" className="text-xs text-white/40 hover:text-white transition-colors">Forgot?</a>}
             </label>
@@ -116,7 +122,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-[#f05638]/50 transition-colors"
+              className="w-full bg-white/5 border border-white/10 rounded-xl text-white px-4 py-3.5 focus:outline-none focus:border-white/30 transition-colors"
               placeholder="••••••••"
               required
             />
@@ -124,14 +130,14 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
           {isSignUp && (
             <div>
-              <label className="block text-sm text-white/70 mb-2 font-sans">
+              <label className="block text-sm text-white/70 mb-2 font-sans font-medium">
                 Repeat Password
               </label>
               <input 
                 type="password"
                 value={repeatPassword}
                 onChange={(e) => setRepeatPassword(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-[#f05638]/50 transition-colors"
+                className="w-full bg-white/5 border border-white/10 rounded-xl text-white px-4 py-3.5 focus:outline-none focus:border-white/30 transition-colors"
                 placeholder="••••••••"
                 required
               />
@@ -143,39 +149,39 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
           <button 
             type="submit"
             disabled={loading}
-            className="w-full bg-[#f05638] hover:bg-[#d94a30] disabled:opacity-50 text-white px-5 py-3 mt-4 text-sm font-serif font-bold transition-colors shadow-lg flex items-center justify-center gap-2"
+            className="w-full bg-white hover:bg-gray-100 disabled:opacity-50 text-black rounded-full px-5 py-3.5 mt-2 text-[15px] font-medium transition-colors shadow-lg flex items-center justify-center gap-2"
           >
-            {isSignUp ? "Sign up" : "Log in"} <span>&rarr;</span>
+            {isSignUp ? "Sign up" : "Log in"}
           </button>
         </form>
 
         <div className="mt-6 flex flex-col gap-3">
           <div className="flex items-center gap-3">
             <div className="flex-1 h-px bg-white/10"></div>
-            <span className="text-white/40 text-xs">OR</span>
+            <span className="text-white/40 text-xs font-medium">OR</span>
             <div className="flex-1 h-px bg-white/10"></div>
           </div>
           
           <button 
             onClick={handleGoogleSignIn}
-            className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white px-5 py-3 text-sm font-sans transition-colors flex items-center justify-center gap-2"
+            className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-white px-5 py-3.5 text-[15px] font-sans font-medium transition-colors flex items-center justify-center gap-2"
           >
             Continue with Google
           </button>
           
           <button 
             onClick={handleGithubSignIn}
-            className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white px-5 py-3 text-sm font-sans transition-colors flex items-center justify-center gap-2"
+            className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-white px-5 py-3.5 text-[15px] font-sans font-medium transition-colors flex items-center justify-center gap-2"
           >
             Continue with GitHub
           </button>
         </div>
 
-        <p className="text-white/50 text-sm text-center mt-8">
+        <p className="text-white/50 text-sm text-center mt-8 font-sans">
           {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
           <button 
             onClick={() => { setIsSignUp(!isSignUp); setError(null); }} 
-            className="text-white hover:text-[#f05638] transition-colors"
+            className="text-white hover:text-gray-300 font-medium transition-colors underline underline-offset-4"
           >
             {isSignUp ? "Log in" : "Sign up"}
           </button>
