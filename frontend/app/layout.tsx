@@ -18,13 +18,19 @@ export const metadata: Metadata = {
   description: "AI agent that keeps everything in line",
 };
 
+import { AuthProvider } from "@/contexts/AuthContext";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
       className={`${instrumentSans.variable} ${inriaSerif.variable} font-sans h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+      </body>
     </html>
   );
 }
