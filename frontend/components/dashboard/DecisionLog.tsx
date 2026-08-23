@@ -26,7 +26,9 @@ export default function DecisionLog({ decisions }: DecisionLogProps) {
     <div className="h-full flex flex-col">
       <div className="flex items-center gap-2 mb-4">
         <h3 className="text-lg font-serif italic text-white/80">Decision Engine</h3>
-        <Info className="w-4 h-4 text-white/40 cursor-help" title="Shows why the AI mentor decided to contact you or stay silent." />
+        <span title="Shows why the AI mentor decided to contact you or stay silent." className="cursor-help">
+          <Info className="w-4 h-4 text-white/40" />
+        </span>
       </div>
       
       <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">

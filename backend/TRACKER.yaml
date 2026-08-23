@@ -157,7 +157,7 @@ plans:
 
       - name: ai-analysis-skills
         file: 04-ai-analysis-skills.md
-        status: pending
+        status: done
         description: "ADK Agent, Gemini анализ push/PR, Observation Service, Skill Service (new = old*0.7 + assessment*0.3), GitHub Worker, Dashboard/Skills/Observations endpoints"
         depends_on: github-integration
 
