@@ -1,29 +1,196 @@
+## ============================================================
+## Mark-I Backend Tracker
+## Последнее обновление: 2026-08-22
+## ============================================================
+
+## --- ИНФРАСТРУКТУРА (День 0) ---
+## Всё что настроили перед началом кода
+
+infrastructure:
+  status: done
+  completed: 2026-08-22
+  items:
+    - name: GCP Project
+      status: done
+      details: "mark-i-506218"
+
+    - name: Firestore
+      status: done
+      details: "Database ID: mark-i, Native mode"
+
+    - name: APIs включены
+      status: done
+      details: "Cloud Run, Pub/Sub, Secret Manager, Vertex AI, Cloud Scheduler, Cloud Build, Artifact Registry, Generative Language"
+
+    - name: Pub/Sub Topics
+      status: done
+      details: "github-events, opportunity-collect, github-events-dlq"
+
+    - name: Firebase Project
+      status: done
+      details: "Тот же GCP проект mark-i-506218, Auth включён (Google, GitHub, Email)"
+
+    - name: Telegram Bot
+      status: done
+      details: "mark1_dev_bot, токен получен, хранится в .env"
+
+    - name: GitHub OAuth App
+      status: done
+      details: "Mark-I, Client ID и Secret получены, webhook secret сгенерирован"
+      redirect_uris:
+        - "https://mark-i-506218.firebaseapp.com/__/auth/handler"
+        - "http://localhost:3000/auth/github/callback"
+
+    - name: Gemini
+      status: done
+      details: "gemini-3.6-flash (хакатон требует 3.5+)"
+
+    - name: .env файл
+      status: done
+      details: "Заполнен: GCP_PROJECT_ID, FIRESTORE_DATABASE, GEMINI_MODEL, TELEGRAM_BOT_TOKEN, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_WEBHOOK_SECRET, PUBSUB topics"
+
+    - name: Secret Manager
+      status: pending
+      details: "Секреты пока в .env для локальной разработки. Перенести в Secret Manager перед деплоем на Cloud Run"
+
+    - name: Cloud Scheduler Job
+      status: pending
+      details: "Создадим когда будет готов opportunity worker (Задача 07)"
+
+## --- ДОКУМЕНТАЦИЯ ---
+## Что уже написано и где лежит
+
+documentation:
+  project_level:
+    - file: docs/prd.md
+      description: "Product Requirements Document — что строим и зачем"
+    - file: docs/trd.md
+      description: "Technical Requirements Document — стек, архитектура, формулы"
+    - file: docs/ARCHITECTURE.md
+      description: "Архитектурные диаграммы (mermaid)"
+    - file: docs/API.md
+      description: "REST API контракт (человекочитаемый)"
+    - file: docs/FIRESTORE.md
+      description: "Схема базы данных Firestore"
+    - file: docs/EVENTS.md
+      description: "Event-driven архитектура, Pub/Sub потоки"
+    - file: docs/DECISIONS.md
+      description: "Architecture Decision Records"
+    - file: openapi.yaml
+      description: "OpenAPI 3.1 спецификация — формальный API контракт"
+
+  backend_level:
+    - file: backend/agents.md
+      description: "Правила backend агента — что можно, что нельзя"
+    - file: backend/docs/plans/2026-08-21-backend-mvp/plan.md
+      description: "Общий план MVP — 6 фаз, зависимости"
+
+## --- РАЗДЕЛЕНИЕ ОТВЕТСТВЕННОСТЕЙ ---
+
+ownership:
+  backend_yernur:
+    - "FastAPI REST API (все эндпоинты из openapi.yaml)"
+    - "Firebase Auth middleware (проверка токенов)"
+    - "Firestore — ВСЕ операции записи (frontend только читает!)"
+    - "GitHub Integration (OAuth, webhooks, анализ активности)"
+    - "Telegram Bot (/start, /link, уведомления, чат)"
+    - "ADK Agent + Gemini (анализ кода, чат, оценка релевантности)"
+    - "Decision Policy (детерминированная логика уведомлений)"
+    - "Pub/Sub Workers (async обработка событий)"
+    - "Opportunity Discovery (сбор и оценка контента)"
+    - "Cloud Run деплой"
+
+  frontend_vlad:
+    - "Next.js web app"
+    - "Firebase Auth (client-side sign-in flow)"
+    - "Dashboard (визуализация skills, observations, decisions)"
+    - "Chat виджет (web)"
+    - "Settings page"
+    - "Onboarding wizard"
+    - "Firebase Hosting деплой"
+    - "Firestore realtime listeners (read-only)"
+
+  contract_points:
+    - "openapi.yaml — API контракт"
+    - "docs/FIRESTORE.md — схема базы данных"
+    - "docs/API.md — человекочитаемая API документация"
+
+## --- ДЕПЛОЙ ---
+
+deployment:
+  backend:
+    platform: "Cloud Run"
+    image: "gcr.io/mark-i-506218/mark-i-backend"
+    region: "us-central1"
+    command: "gcloud run deploy mark-i-backend --image gcr.io/mark-i-506218/mark-i-backend --platform managed --region us-central1 --allow-unauthenticated"
+  frontend:
+    platform: "Firebase Hosting"
+    owner: "Vlad"
+
+## --- ПЛАН РАБОТЫ ---
+
 plans:
   - name: backend-mvp
     path: docs/plans/2026-08-21-backend-mvp/
-    status: planned
+    status: in-progress
     created: 2026-08-21
-    started:
+    started: 2026-08-22
     shipped:
     tasks:
       - name: project-init
         file: 01-project-init.md
-        status: pending
+        status: done
+        description: "requirements.txt, Dockerfile, структура папок, app/config.py, .env.example"
+        depends_on: infrastructure
+
       - name: fastapi-auth-users
         file: 02-fastapi-auth-users.md
-        status: pending
+        status: done
+        description: "FastAPI app, CORS, health check, Firebase Auth middleware, Pydantic модели, User Service, GET/POST/PATCH /api/v1/me"
+        depends_on: project-init
+
       - name: github-integration
         file: 03-github-integration.md
-        status: pending
+        status: done
+        description: "GitHub OAuth flow (auth-url, callback), Secret Manager, webhook receiver (HMAC), repo selection, Pub/Sub publish"
+        depends_on: fastapi-auth-users
+
       - name: ai-analysis-skills
         file: 04-ai-analysis-skills.md
-        status: pending
+        status: done
+        description: "ADK Agent, Gemini анализ push/PR, Observation Service, Skill Service (new = old*0.7 + assessment*0.3), GitHub Worker, Dashboard/Skills/Observations endpoints"
+        depends_on: github-integration
+
       - name: decision-telegram
         file: 05-decision-telegram.md
         status: pending
+        description: "Decision Policy (Python if/else, НЕ промпт), пороги chill=7/normal=5/brutal=3, эскалация, Telegram Bot (/start, /link), уведомления, link/unlink API"
+        depends_on: ai-analysis-skills
+
       - name: unified-chat
         file: 06-unified-chat.md
         status: pending
+        description: "Chat Service (web + telegram → один агент), ADK tools (read_profile, read_skills, etc.), POST /api/v1/chat, GET /api/v1/messages"
+        depends_on: decision-telegram
+
       - name: opportunities-deploy
         file: 07-opportunities-deploy.md
         status: pending
+        description: "Opportunity Service + Worker, Cloud Scheduler job, RSS sources, Dockerfile оптимизация, Cloud Run deploy, Firestore Security Rules"
+        depends_on: decision-telegram
+
+## --- ЧТО СДЕЛАНО В ЭТОМ ЧАТЕ ---
+
+session_log:
+  date: 2026-08-22
+  summary: "GitHub интеграция (Фаза 3 / Задача 03)"
+  completed:
+    - "Задача 01: Настроены requirements.txt, Dockerfile, папки, Pydantic Settings"
+    - "Задача 02: FastAPI, CORS, Health check, Firebase Auth middleware"
+    - "Задача 02: Pydantic модели (CreateProfile, UpdateProfile, UserProfile)"
+    - "Задача 02: Успешный тестовый запуск сервера и /health"
+    - "Задача 03: Pydantic схемы (github.py) для OAuth и репозиториев"
+    - "Задача 03: GitHubService с OAuth Flow, Secret Manager, Webhook registration, HMAC валидацией и Pub/Sub"
+    - "Задача 03: Эндпоинты /api/v1/github/* и приемник вебхуков /api/v1/webhooks/github"
+    - "Задача 03: Проверена компиляция кода"
+  next_step: "Начать Задачу 04 (ai-analysis-skills)"

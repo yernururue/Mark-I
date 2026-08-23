@@ -5,7 +5,7 @@ areas:
   backend:
     status: in-progress
     current_plan: backend-mvp
-    notes: "Plan created 2026-08-21, 7 tasks, all pending"
+    notes: "Plan created 2026-08-21, 7 tasks (01-03 completed, 04-07 pending)"
 
   frontend:
     status: in-progress
@@ -18,7 +18,7 @@ integration:
 plans:
   - name: backend-mvp
     area: backend
-    status: planned
+    status: in-progress
     created: 2026-08-21
   - name: frontend-mvp
     area: frontend
