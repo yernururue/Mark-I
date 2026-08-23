@@ -8,16 +8,16 @@ plans:
     tasks:
       - name: firebase-auth
         file: 01-firebase-auth.md
-        status: in-progress
+        status: done
       - name: api-protected
         file: 02-api-protected.md
         status: pending
       - name: onboarding-flow
         file: 03-onboarding-flow.md
-        status: pending
+        status: done
       - name: dashboard
         file: 04-dashboard.md
-        status: pending
+        status: in-progress
       - name: unified-chat
         file: 05-unified-chat.md
         status: pending

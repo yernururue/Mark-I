@@ -51,9 +51,11 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
   const handleGoogleSignIn = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
       onClose();
-      router.push('/dashboard');
+      // Check if this is a new user by comparing creation and last sign in times
+      const isNewUser = result.user.metadata.creationTime === result.user.metadata.lastSignInTime;
+      router.push(isNewUser ? '/onboarding' : '/dashboard');
     } catch (err: any) {
       setError(err.message || "Google sign-in failed");
     }
@@ -61,9 +63,11 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
   const handleGithubSignIn = async () => {
     try {
-      await signInWithPopup(auth, githubProvider);
+      const result = await signInWithPopup(auth, githubProvider);
       onClose();
-      router.push('/dashboard');
+      // Check if this is a new user
+      const isNewUser = result.user.metadata.creationTime === result.user.metadata.lastSignInTime;
+      router.push(isNewUser ? '/onboarding' : '/dashboard');
     } catch (err: any) {
       setError(err.message || "GitHub sign-in failed");
     }
