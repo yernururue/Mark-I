@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useState } from "react";
 import LoginModal from "./LoginModal";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Header() {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const { user, signOut } = useAuth();
 
   return (
     <>
@@ -43,15 +45,33 @@ export default function Header() {
             <Link href="#docs" className="text-white/80 hover:text-white text-sm transition-colors">
               Docs
             </Link>
-            <button 
-              onClick={() => setIsLoginOpen(true)} 
-              className="text-white/80 hover:text-white text-sm transition-colors"
-            >
-              Log in
-            </button>
-            <button className="bg-[#f05638] hover:bg-[#d94a30] text-white px-5 py-2 text-sm font-serif font-bold transition-colors">
-              Sign up
-            </button>
+            
+            {user ? (
+              <div className="flex items-center gap-4">
+                <span className="text-white/60 text-sm">
+                  {user.displayName || user.email}
+                </span>
+                <Link 
+                  href="/dashboard"
+                  className="bg-white/10 hover:bg-white/20 text-white px-5 py-2 text-sm font-serif transition-colors"
+                >
+                  Dashboard
+                </Link>
+                <button 
+                  onClick={signOut}
+                  className="text-white/60 hover:text-white text-sm transition-colors"
+                >
+                  Sign Out
+                </button>
+              </div>
+            ) : (
+              <button 
+                onClick={() => setIsLoginOpen(true)} 
+                className="bg-[#f05638] hover:bg-[#d94a30] text-white px-5 py-2 text-sm font-serif font-bold transition-colors"
+              >
+                Log in
+              </button>
+            )}
           </div>
         </div>
       </header>
