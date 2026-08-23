@@ -41,7 +41,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
         await signInWithEmailAndPassword(auth, email, password);
       }
       onClose();
-      router.push('/dashboard');
+      router.push(isSignUp ? '/onboarding' : '/dashboard');
     } catch (err: any) {
       setError(err.message || "Failed to authenticate");
     } finally {
