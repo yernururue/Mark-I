@@ -79,6 +79,7 @@ class UserProfile(BaseModel):
     intensity: IntensityLevel
     language: Language = Language.EN
     telegramLinked: bool = False             # Привязан ли Телеграм?
+    telegramUserId: Optional[int] = None     # ID пользователя в Телеграме
     telegramUsername: Optional[str] = None   # Ник в Телеграме (если есть)
     githubConnected: bool = False            # Подключен ли GitHub?
     githubUsername: Optional[str] = None     # Ник в GitHub (если есть)

@@ -17,12 +17,15 @@ from app.dependencies import close_httpx_client
 # Импорт наших роутеров v1, webhooks и настроек
 from app.api.v1.router import api_v1_router
 from app.api.webhooks.github import router as github_webhook_router
+from app.api.webhooks.telegram import router as telegram_webhook_router
+from telegrambot.bot import setup_webhook
 from app.config import settings
 from app.models.common import HealthResponse
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    await setup_webhook()
     yield
     # Shutdown
     await close_httpx_client()
@@ -51,6 +54,7 @@ app.add_middleware(
 # 3. Подключение всех наших роутеров (эндпоинтов) к приложению
 app.include_router(api_v1_router)
 app.include_router(github_webhook_router, prefix="/api/v1")
+app.include_router(telegram_webhook_router, prefix="/api/v1")
 
 # 4. Проверка здоровья (Health Check)
 # Это единственный эндпоинт без префикса /api/v1, потому что он технический.

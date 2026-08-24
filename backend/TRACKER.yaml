@@ -163,7 +163,7 @@ plans:
 
       - name: decision-telegram
         file: 05-decision-telegram.md
-        status: pending
+        status: done
         description: "Decision Policy (Python if/else, НЕ промпт), пороги chill=7/normal=5/brutal=3, эскалация, Telegram Bot (/start, /link), уведомления, link/unlink API"
         depends_on: ai-analysis-skills
 
