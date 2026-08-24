@@ -9,6 +9,8 @@ from backend.app.config import get_settings
 from backend.ai.analyzers.github_analyzer import analyze_github_event
 from backend.app.services.observation_service import ObservationService
 from backend.app.services.skill_service import SkillService
+from backend.app.services.decision_service import DecisionService
+from backend.app.services.telegram_service import TelegramService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,6 +19,8 @@ settings = get_settings()
 db = firestore.Client(project=settings.GCP_PROJECT_ID, database=settings.FIRESTORE_DATABASE)
 observation_service = ObservationService(db)
 skill_service = SkillService(db)
+decision_service = DecisionService(db)
+telegram_service = TelegramService(db)
 
 def get_changes_text(event_type: str, payload: dict) -> str:
     """Extracts relevant text from payload to feed to Gemini."""
@@ -72,7 +76,7 @@ async def process_message_async(message: pubsub_v1.subscriber.message.Message):
                 "ref": ref,
                 "commitCount": commit_count,
             }
-            observation_service.create_observation(
+            observation = observation_service.create_observation(
                 uid=uid,
                 source="github",
                 summary=observation_data.summary,
@@ -90,6 +94,34 @@ async def process_message_async(message: pubsub_v1.subscriber.message.Message):
                 assessment=observation_data.significanceScore,
                 weight=0.3
             )
+            
+            # Decision Policy
+            user_doc = db.collection("users").document(uid).get()
+            if user_doc.exists:
+                user_data = user_doc.to_dict()
+                intensity = user_data.get("intensity", "normal")
+                telegram_user_id = user_data.get("telegramUserId")
+                
+                escalation_flags = []
+                if observation_data.sentiment == "negative":
+                    escalation_flags.append("negative_sentiment")
+                    
+                should_notify, reason = decision_service.evaluate_and_log(
+                    uid=uid,
+                    observation_id=observation.id,
+                    significance=observation_data.significanceScore,
+                    intensity=intensity,
+                    escalation_flags=escalation_flags
+                )
+                
+                if should_notify and telegram_user_id:
+                    msg = (
+                        f"🤖 *Mark-I GitHub Analysis*\n\n"
+                        f"**Concept:** `{observation_data.concept}`\n"
+                        f"**Summary:** {observation_data.summary}\n\n"
+                        f"_(Reason for ping: {reason})_"
+                    )
+                    await telegram_service.send_message(telegram_user_id, msg)
             
             logger.info(f"Successfully processed and updated skill '{observation_data.concept}' for user {uid}")
         
