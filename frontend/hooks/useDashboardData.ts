@@ -29,10 +29,19 @@ export interface Decision {
   timestamp: string;
 }
 
+export interface Agent {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  timestamp: string;
+}
+
 export function useDashboardData(uid: string | undefined) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [observations, setObservations] = useState<Observation[]>([]);
   const [decisions, setDecisions] = useState<Decision[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -40,6 +49,7 @@ export function useDashboardData(uid: string | undefined) {
       setProfile(null);
       setObservations([]);
       setDecisions([]);
+      setAgents([]);
       setLoading(false);
       return;
     }
@@ -78,14 +88,26 @@ export function useDashboardData(uid: string | undefined) {
       setDecisions(data);
     });
 
+    // 4. Subscribe to agents
+    const agentsRef = collection(db, 'users', uid, 'agents');
+    const agentsQuery = query(agentsRef, orderBy('timestamp', 'desc'));
+    const unsubAgents = onSnapshot(agentsQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Agent[];
+      setAgents(data);
+    });
+
     setLoading(false);
 
     return () => {
       unsubProfile();
       unsubObs();
       unsubDec();
+      unsubAgents();
     };
   }, [uid]);
 
-  return { profile, observations, decisions, loading };
+  return { profile, observations, decisions, agents, loading };
 }
