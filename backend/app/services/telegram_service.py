@@ -10,6 +10,15 @@ from google.cloud.firestore_v1.client import Client as FirestoreClient
 
 logger = logging.getLogger(__name__)
 
+# Reusable module-level client
+_http_client = None
+
+def get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient()
+    return _http_client
+
 class TelegramService:
     def __init__(self, db: FirestoreClient):
         self._db = db
@@ -22,7 +31,7 @@ class TelegramService:
     def _get_users_collection(self):
         return self._db.collection("users")
 
-    async def send_message(self, chat_id: int, text: str, parse_mode: str = "Markdown") -> bool:
+    async def send_message(self, chat_id: int, text: str, parse_mode: str = "HTML") -> bool:
         """
         Sends a message to a Telegram chat using httpx.
         """
@@ -37,14 +46,14 @@ class TelegramService:
             "parse_mode": parse_mode
         }
         
+        client = get_http_client()
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=payload, timeout=10.0)
-                if response.status_code == 200:
-                    return True
-                else:
-                    logger.error(f"Failed to send Telegram message: {response.text}")
-                    return False
+            response = await client.post(url, json=payload, timeout=10.0)
+            if response.status_code == 200:
+                return True
+            else:
+                logger.error(f"Failed to send Telegram message: {response.text}")
+                return False
         except Exception as e:
             logger.error(f"Exception sending Telegram message: {e}")
             return False
