@@ -118,6 +118,16 @@ class UserService:
         # Отдаем свежую версию профиля из базы
         return self.get_profile(uid)
 
+    def get_user_by_telegram_id(self, telegram_user_id: int) -> Optional[str]:
+        """
+        Ищет пользователя по telegramUserId и возвращает его uid.
+        """
+        # В Firestore можно использовать query
+        users_ref = self._collection.where(filter=("telegramUserId", "==", telegram_user_id)).limit(1).get()
+        if not users_ref:
+            return None
+        return users_ref[0].id
+
     def _firestore_to_profile(self, data: dict) -> UserProfile:
         """
         Вспомогательная внутренняя функция (начинается с нижнего подчеркивания).

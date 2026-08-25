@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List
 
 from google.cloud.firestore_v1.client import Client as FirestoreClient
@@ -48,7 +48,7 @@ class DecisionService:
         if any(flag in ESCALATION_RULES for flag in escalation_flags):
             should_notify = True
             reason = f"Escalation: {', '.join(escalation_flags)}"
-        elif significance >= threshold:
+        elif significance is not None and significance >= threshold:
             should_notify = True
             reason = f"Significance {significance} >= threshold {threshold}"
         else:
@@ -57,6 +57,7 @@ class DecisionService:
             
         # 2. Log to Firestore
         now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(days=30)
         decision_id = f"dec-{uuid.uuid4().hex[:12]}"
         
         doc_data = {
@@ -68,6 +69,7 @@ class DecisionService:
             "shouldNotify": should_notify,
             "reason": reason,
             "createdAt": now,
+            "expiresAt": expires_at,
         }
         
         self._get_collection(uid).document(decision_id).set(doc_data)

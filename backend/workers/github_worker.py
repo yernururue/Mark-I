@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import logging
+import html
 from google.cloud import pubsub_v1
 from google.cloud import firestore
 
@@ -55,7 +56,7 @@ async def process_message_async(message: pubsub_v1.subscriber.message.Message):
         
         repo_name = payload.get("repository", {}).get("full_name", "unknown/repo")
         ref = payload.get("ref", "")
-        commit_count = len(payload.get("commits", [])) if event_type == "push" else 1
+        commit_count = len(payload.get("commits") or []) if event_type == "push" else 1
         
         changes_text = get_changes_text(event_type, payload)
         
@@ -106,20 +107,22 @@ async def process_message_async(message: pubsub_v1.subscriber.message.Message):
                 if observation_data.sentiment == "negative":
                     escalation_flags.append("negative_sentiment")
                     
-                should_notify, reason = decision_service.evaluate_and_log(
-                    uid=uid,
-                    observation_id=observation.id,
-                    significance=observation_data.significanceScore,
-                    intensity=intensity,
-                    escalation_flags=escalation_flags
-                )
+                should_notify, reason = False, ""
+                if observation_data.significanceScore is not None:
+                    should_notify, reason = decision_service.evaluate_and_log(
+                        uid=uid,
+                        observation_id=observation.id,
+                        significance=observation_data.significanceScore,
+                        intensity=intensity,
+                        escalation_flags=escalation_flags
+                    )
                 
                 if should_notify and telegram_user_id:
                     msg = (
-                        f"🤖 *Mark-I GitHub Analysis*\n\n"
-                        f"**Concept:** `{observation_data.concept}`\n"
-                        f"**Summary:** {observation_data.summary}\n\n"
-                        f"_(Reason for ping: {reason})_"
+                        f"🤖 <b>Mark-I GitHub Analysis</b>\n\n"
+                        f"<b>Concept:</b> <code>{html.escape(observation_data.concept)}</code>\n"
+                        f"<b>Summary:</b> {html.escape(observation_data.summary)}\n\n"
+                        f"<i>(Reason for ping: {html.escape(reason)})</i>"
                     )
                     await telegram_service.send_message(telegram_user_id, msg)
             
