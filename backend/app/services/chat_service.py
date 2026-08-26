@@ -43,16 +43,21 @@ class ChatService:
         messages_ref = self._db.collection("users").document(uid).collection("messages")
         history_docs = messages_ref.order_by(
             "createdAt", direction="ASCENDING"
-        ).limit_to_last(11).get() # 10 history + 1 current
+        ).limit_to_last(11).get() # Fetch a bit more to ensure we have enough after filtering
 
         history_data = []
-        # Мы отбрасываем последнее сообщение, так как мы его передаем как new_message
-        for doc in history_docs[:-1]:
+        # Исключаем текущее сообщение явно по ID, чтобы избежать race conditions
+        for doc in history_docs:
+            if doc.id == msg_ref.id:
+                continue
             doc_data = doc.to_dict()
             history_data.append({
                 "role": doc_data.get("role"),
                 "text": doc_data.get("text")
             })
+        
+        # Оставляем только последние 10 сообщений
+        history_data = history_data[-10:]
 
         # 4. Формируем системный промпт с учетом интенсивности и целей
         intensity = profile.intensity
@@ -74,7 +79,7 @@ class ChatService:
         system_instruction += "\nProvide clear, actionable, and concise advice. Always reply in the language the user is speaking."
 
         # 5. Запрашиваем агента
-        agent = ChatAgent(system_instruction=system_instruction)
+        agent = ChatAgent(db=self._db, uid=uid, system_instruction=system_instruction)
         agent_response_text = await agent.generate_response(history_data, text)
 
         # 6. Сохраняем ответ агента
