@@ -18,6 +18,7 @@ from app.api.v1.observations import router as observations_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.telegram import router as telegram_router
 from app.api.v1.chat import router as chat_router
+from app.api.v1.triggers import router as triggers_router
 
 # Создаем главный роутер для текущей версии (v1)
 api_v1_router = APIRouter(prefix="/api/v1")
@@ -30,3 +31,4 @@ api_v1_router.include_router(observations_router)
 api_v1_router.include_router(dashboard_router)
 api_v1_router.include_router(telegram_router)
 api_v1_router.include_router(chat_router)
+api_v1_router.include_router(triggers_router)
