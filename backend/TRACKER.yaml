@@ -163,13 +163,13 @@ plans:
 
       - name: decision-telegram
         file: 05-decision-telegram.md
-        status: pending
+        status: done
         description: "Decision Policy (Python if/else, НЕ промпт), пороги chill=7/normal=5/brutal=3, эскалация, Telegram Bot (/start, /link), уведомления, link/unlink API"
         depends_on: ai-analysis-skills
 
       - name: unified-chat
         file: 06-unified-chat.md
-        status: pending
+        status: done
         description: "Chat Service (web + telegram → один агент), ADK tools (read_profile, read_skills, etc.), POST /api/v1/chat, GET /api/v1/messages"
         depends_on: decision-telegram
 
@@ -182,15 +182,13 @@ plans:
 ## --- ЧТО СДЕЛАНО В ЭТОМ ЧАТЕ ---
 
 session_log:
-  date: 2026-08-22
-  summary: "GitHub интеграция (Фаза 3 / Задача 03)"
+  date: 2026-08-25
+  summary: "Реализация Фазы 6 (Unified Chat)"
   completed:
-    - "Задача 01: Настроены requirements.txt, Dockerfile, папки, Pydantic Settings"
-    - "Задача 02: FastAPI, CORS, Health check, Firebase Auth middleware"
-    - "Задача 02: Pydantic модели (CreateProfile, UpdateProfile, UserProfile)"
-    - "Задача 02: Успешный тестовый запуск сервера и /health"
-    - "Задача 03: Pydantic схемы (github.py) для OAuth и репозиториев"
-    - "Задача 03: GitHubService с OAuth Flow, Secret Manager, Webhook registration, HMAC валидацией и Pub/Sub"
-    - "Задача 03: Эндпоинты /api/v1/github/* и приемник вебхуков /api/v1/webhooks/github"
-    - "Задача 03: Проверена компиляция кода"
-  next_step: "Начать Задачу 04 (ai-analysis-skills)"
+    - "Задача 06: Создана модель данных ChatMessage, ChatRequest, ChatResponse."
+    - "Задача 06: Добавлен метод get_user_by_telegram_id в UserService."
+    - "Задача 06: Создан ChatAgent (обертка над Vertex AI) с поддержкой истории и персоны."
+    - "Задача 06: Создан ChatService (unified entry point)."
+    - "Задача 06: Добавлены эндпоинты /api/v1/chat и /api/v1/messages для веб-версии."
+    - "Задача 06: Настроена маршрутизация из Telegram-бота в ChatService."
+  next_step: "Начать Задачу 07 (opportunities-deploy)"
