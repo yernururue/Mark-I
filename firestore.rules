@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Users can only read their own data
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false; // Backend only via Admin SDK
+      
+      match /observations/{obsId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+      
+      match /messages/{msgId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+      
+      match /decisions/{decisionId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+    }
+    
+    // Processed events — backend only, no client access
+    match /processed_events/{eventId} {
+      allow read, write: if false;
+    }
+  }
+}

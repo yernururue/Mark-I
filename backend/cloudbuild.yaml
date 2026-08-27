@@ -1,0 +1,50 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/mark-i-backend:$COMMIT_SHA', '.']
+    dir: 'backend'
+  
+  # Push the container image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/mark-i-backend:$COMMIT_SHA']
+  
+  # Deploy API to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'mark-i-api'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/mark-i-backend:$COMMIT_SHA'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'ENV=production'
+
+  # Deploy Opportunity Worker to Cloud Run (as a separate service without public access, or a Job)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'mark-i-opportunity-worker'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/mark-i-backend:$COMMIT_SHA'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--no-allow-unauthenticated'
+      - '--command'
+      - 'python'
+      - '--args'
+      - '-m,workers.opportunity_worker'
+      - '--set-env-vars'
+      - 'ENV=production'
+
+images:
+  - 'gcr.io/$PROJECT_ID/mark-i-backend:$COMMIT_SHA'

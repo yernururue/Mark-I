@@ -49,8 +49,24 @@ venv/
 .env.development.local
 .env.test.local
 .env.production.local
-.env.example
 
 # Other
 .omc
 .claude
+
+# Next.js
+.next/
+out/
+build/
+
+# Firebase
+.firebase/
+firebase-export-*
+firebase-debug.log*
+
+# Coverage
+coverage/
+.nyc_output/
+htmlcov/
+.coverage
+.coverage.*

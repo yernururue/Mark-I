@@ -132,10 +132,10 @@ deployment:
 plans:
   - name: backend-mvp
     path: docs/plans/2026-08-21-backend-mvp/
-    status: in-progress
+    status: shipped
     created: 2026-08-21
     started: 2026-08-22
-    shipped:
+    shipped: 2026-08-27
     tasks:
       - name: project-init
         file: 01-project-init.md
@@ -175,20 +175,21 @@ plans:
 
       - name: opportunities-deploy
         file: 07-opportunities-deploy.md
-        status: pending
+        status: done
         description: "Opportunity Service + Worker, Cloud Scheduler job, RSS sources, Dockerfile оптимизация, Cloud Run deploy, Firestore Security Rules"
         depends_on: decision-telegram
 
 ## --- ЧТО СДЕЛАНО В ЭТОМ ЧАТЕ ---
 
 session_log:
-  date: 2026-08-25
-  summary: "Реализация Фазы 6 (Unified Chat)"
+  date: 2026-08-27
+  summary: "Реализация Фазы 7 (Opportunity Discovery & Deploy) и завершение MVP"
   completed:
-    - "Задача 06: Создана модель данных ChatMessage, ChatRequest, ChatResponse."
-    - "Задача 06: Добавлен метод get_user_by_telegram_id в UserService."
-    - "Задача 06: Создан ChatAgent (обертка над Vertex AI) с поддержкой истории и персоны."
-    - "Задача 06: Создан ChatService (unified entry point)."
-    - "Задача 06: Добавлены эндпоинты /api/v1/chat и /api/v1/messages для веб-версии."
-    - "Задача 06: Настроена маршрутизация из Telegram-бота в ChatService."
-  next_step: "Начать Задачу 07 (opportunities-deploy)"
+    - "Задача 07: Написаны firestore.rules для безопасности базы данных."
+    - "Задача 07: Создан OpportunityService для парсинга Dev.to API."
+    - "Задача 07: Создан OpportunityAnalyzer (Gemini) для оценки релевантности статей."
+    - "Задача 07: Создан OpportunityWorker (Pub/Sub pull) для асинхронной обработки."
+    - "Задача 07: Создан эндпоинт POST /api/v1/trigger/opportunities для Cloud Scheduler."
+    - "Задача 07: Написан cloudbuild.yaml для деплоя на Cloud Run."
+    - "Задача 07: Фаза backend-mvp официально завершена и переведена в статус shipped."
+  next_step: "Переход к frontend или проверка интеграции на проде."
