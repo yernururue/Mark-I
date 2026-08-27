@@ -2,20 +2,39 @@
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-import Header from "@/components/Header";
+import { useEffect, useState } from "react";
+import { Search, Plus, Mic, Monitor, Cloud, Droplet, Plug, Bot, Zap, Cpu, Sparkles, Code, Layout, Database } from "lucide-react";
 import { useDashboardData } from "@/hooks/useDashboardData";
-import SkillRadar from "@/components/dashboard/SkillRadar";
-import ObservationFeed from "@/components/dashboard/ObservationFeed";
-import DecisionLog from "@/components/dashboard/DecisionLog";
-import { MessageCircle } from "lucide-react";
-import Link from "next/link";
+import CreateAgentModal from "@/components/dashboard/CreateAgentModal";
+
+const IconMap: Record<string, any> = {
+  bot: Bot,
+  zap: Zap,
+  cloud: Cloud,
+  cpu: Cpu,
+  sparkles: Sparkles,
+  code: Code,
+  layout: Layout,
+  database: Database,
+};
+
+// Formats timestamp like "9:13 PM"
+function formatTime(isoString: string) {
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return "";
+  }
+}
 
 export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const { agents, loading: dataLoading } = useDashboardData(user?.uid);
   
-  const { profile, observations, decisions, loading: dataLoading } = useDashboardData(user?.uid);
+  const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -23,77 +42,188 @@ export default function Dashboard() {
     }
   }, [user, authLoading, router]);
 
+  // Set the first agent as active by default when they load
+  useEffect(() => {
+    if (agents.length > 0 && !activeAgentId) {
+      setActiveAgentId(agents[0].id);
+    }
+  }, [agents, activeAgentId]);
+
   if (authLoading || !user || dataLoading) {
     return (
-      <div className="min-h-screen bg-[#050505] flex items-center justify-center">
-        <p className="text-white/50 text-sm font-sans animate-pulse">Loading dashboard...</p>
+      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
+        <p className="text-white/50 text-sm font-sans animate-pulse">Loading...</p>
       </div>
     );
   }
 
+  const activeAgent = agents.find(a => a.id === activeAgentId) || agents[0];
+  const ActiveIcon = activeAgent ? (IconMap[activeAgent.icon] || Bot) : Cloud;
+  const activeColor = activeAgent?.color || "bg-blue-500";
+  const agentName = activeAgent?.name || "No Agent Found";
+
   return (
-    <div className="min-h-screen bg-[#050505] text-white">
-      <Header />
+    <div className="flex h-screen w-screen bg-[#0A0A0A] text-[#E0E0E0] font-sans overflow-hidden">
       
-      <main className="pt-28 pb-12 px-6 lg:px-8 max-w-[1400px] mx-auto h-screen flex flex-col">
-        
-        {/* Top Header Section */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8 shrink-0">
-          <div>
-            <h1 className="text-3xl font-sans font-medium tracking-tight mb-2">
-              Welcome back, {user.displayName || "Developer"}
-            </h1>
-            {profile?.goal ? (
-              <p className="text-white/60 text-sm font-sans flex items-center gap-2">
-                <span className="text-[#f05638] uppercase text-xs font-mono tracking-wider">Goal:</span> 
-                {profile.goal}
-              </p>
-            ) : (
-              <p className="text-white/50 text-sm font-sans">
-                Set your learning goal in <Link href="/settings" className="underline hover:text-white">Settings</Link>.
-              </p>
-            )}
+      {/* LEFT SIDEBAR */}
+      <aside className="w-[280px] flex-shrink-0 bg-[#161616] border-r border-white/5 flex flex-col z-20">
+        {/* Header: Search & Add Agent */}
+        <div className="flex items-center gap-3 px-4 pt-6 pb-4">
+          <div className="flex-1 bg-white/5 rounded-full flex items-center px-3 py-1.5 border border-white/5 focus-within:border-white/20 transition-colors">
+            <Search className="w-4 h-4 text-white/40 mr-2 flex-shrink-0" />
+            <input 
+              type="text" 
+              placeholder="Search" 
+              className="bg-transparent border-none text-sm w-full outline-none text-white/80 placeholder:text-white/30"
+            />
           </div>
           
-          <div className="flex items-center gap-4">
-            <div className="px-4 py-2 border border-white/10 bg-white/5 rounded-full text-xs font-mono text-white/60">
-              Intensity: <span className="text-white capitalize">{profile?.intensity || "Normal"}</span>
-            </div>
-            
-            <Link 
-              href="/chat"
-              className="flex items-center gap-2 px-5 py-2.5 bg-[#f05638] hover:bg-[#d94a30] text-white rounded-full text-sm font-sans font-medium transition-colors"
-            >
-              <MessageCircle className="w-4 h-4" />
-              Chat with Agent
-            </Link>
-          </div>
+          <button 
+            onClick={() => setIsCreateModalOpen(true)}
+            className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+            title="Create new agent"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
         </div>
-        
-        {/* Dashboard Grid */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* Left Column: Skills (4 cols) */}
-          <div className="lg:col-span-4 flex flex-col gap-6">
-            <div className="flex-1 bg-white/[0.02] border border-white/10 rounded-xl p-6 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-[#f05638]/5 blur-3xl rounded-full" />
-              <SkillRadar skills={profile?.skills} />
+
+        {/* Chat List */}
+        <div className="flex-1 overflow-y-auto px-2">
+          {agents.length === 0 && (
+            <div className="p-4 text-center">
+              <p className="text-white/40 text-sm mb-4">No agents yet.</p>
+              <button 
+                onClick={() => setIsCreateModalOpen(true)}
+                className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+              >
+                Create Agent
+              </button>
             </div>
-          </div>
+          )}
+
+          {agents.map(agent => {
+            const isActive = agent.id === activeAgentId;
+            const ItemIcon = IconMap[agent.icon] || Bot;
+            
+            return (
+              <div 
+                key={agent.id}
+                onClick={() => setActiveAgentId(agent.id)}
+                className={`flex items-start gap-3 p-2 rounded-xl cursor-pointer mb-1 group transition-colors ${
+                  isActive ? 'bg-white/5' : 'hover:bg-white/[0.02]'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-full ${agent.color} flex items-center justify-center flex-shrink-0`}>
+                  <ItemIcon className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex-1 min-w-0 pt-0.5">
+                  <div className="flex justify-between items-baseline mb-0.5">
+                    <p className={`text-sm font-medium truncate transition-colors ${
+                      isActive ? 'text-white/90' : 'text-white/70 group-hover:text-white/90'
+                    }`}>
+                      {agent.name}
+                    </p>
+                    <span className="text-[10px] text-white/40 flex-shrink-0">
+                      {formatTime(agent.timestamp)}
+                    </span>
+                  </div>
+                  <p className={`text-xs truncate transition-colors ${
+                    isActive ? 'text-white/50' : 'text-white/40 group-hover:text-white/50'
+                  }`}>
+                    Hello, how can I help you today?
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Bottom Actions */}
+        <div className="p-4 border-t border-white/5 flex flex-col gap-2">
+          <button className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 text-sm text-white/70 hover:text-white transition-colors">
+            <Plug className="w-4 h-4" />
+            Plugins
+          </button>
+          <button className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 text-sm text-white/70 hover:text-white transition-colors">
+            <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px] uppercase font-medium">
+              {user.displayName?.[0] || user.email?.[0] || 'V'}
+            </div>
+            {user.displayName || user.email || 'Vlad s'}
+          </button>
+        </div>
+      </aside>
+
+      {/* MAIN CHAT AREA */}
+      <main className="flex-1 flex flex-col bg-[#0A0A0A] relative">
+        {/* Header */}
+        <header className="h-16 border-b border-white/5 flex items-center justify-between px-6 flex-shrink-0 z-10">
+          {activeAgent ? (
+            <div className="flex items-center gap-3">
+              <div className={`w-8 h-8 rounded-full ${activeColor} flex items-center justify-center`}>
+                <ActiveIcon className="w-4 h-4 text-white" />
+              </div>
+              <h2 className="text-sm font-medium text-white/80">{agentName}</h2>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-white/5"></div>
+              <div className="w-24 h-4 bg-white/5 rounded-full"></div>
+            </div>
+          )}
+          <button className="p-2 rounded-full hover:bg-white/5 transition-colors">
+            <Monitor className="w-4 h-4 text-white/40" />
+          </button>
+        </header>
+
+        {/* Messages Area */}
+        <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
           
-          {/* Middle Column: Activity Feed (4 cols) */}
-          <div className="lg:col-span-5 bg-white/[0.02] border border-white/10 rounded-xl p-6">
-            <ObservationFeed observations={observations} />
+          {activeAgent ? (
+            <>
+              {/* Bot Default Message */}
+              <div className="flex justify-start">
+                <div className="bg-[#1C1C1C] rounded-2xl rounded-tl-sm p-4 max-w-[80%] text-[15px] text-white/80 leading-relaxed shadow-sm">
+                  <p>Hello! I'm <strong>{agentName}</strong>. I was just initialized.</p>
+                  <p className="mt-2">How can I help you today?</p>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center opacity-50">
+              <p className="text-sm">Select or create an agent to start chatting.</p>
+            </div>
+          )}
+
+          {/* Spacer for bottom input */}
+          <div className="h-24 flex-shrink-0"></div>
+        </div>
+
+        {/* Input Area */}
+        <div className="absolute bottom-6 left-0 right-0 px-6 mx-auto w-full max-w-4xl">
+          <div className="bg-[#1C1C1C] rounded-full flex items-center px-4 py-3.5 shadow-xl border border-white/5 focus-within:border-white/20 transition-colors relative z-10">
+            <button className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors flex-shrink-0 text-white/70">
+              <Plus className="w-4 h-4" />
+            </button>
+            <input 
+              type="text" 
+              placeholder={`Message ${agentName}...`}
+              className="bg-transparent border-none text-[15px] w-full outline-none text-white/90 placeholder:text-white/30 px-4"
+              disabled={!activeAgent}
+            />
+            <button className="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center transition-colors flex-shrink-0 hover:bg-gray-200" disabled={!activeAgent}>
+              <Mic className="w-4 h-4" />
+            </button>
           </div>
-          
-          {/* Right Column: Decision Engine (4 cols) */}
-          <div className="lg:col-span-3 bg-white/[0.02] border border-white/10 rounded-xl p-6">
-            <DecisionLog decisions={decisions} />
-          </div>
-          
+          {/* subtle gradient fade behind input to mask scrolling text */}
+          <div className="absolute bottom-[-24px] left-0 right-0 h-32 bg-gradient-to-t from-[#0A0A0A] via-[#0A0A0A]/90 to-transparent z-0 pointer-events-none"></div>
         </div>
         
       </main>
+
+      <CreateAgentModal 
+        isOpen={isCreateModalOpen} 
+        onClose={() => setIsCreateModalOpen(false)} 
+      />
     </div>
   );
 }
