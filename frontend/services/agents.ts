@@ -1,31 +1,78 @@
 import { fetchApi } from "@/lib/api";
 import { appConfig } from "@/lib/config";
-import type { Agent } from "@/types/models";
-
-const MARK_I_MENTOR: Agent = {
-  id: "mark-i-mentor",
-  name: "Mark-I mentor",
-  description: "Your developer growth mentor",
-  status: "available",
-};
+import { createId } from "@/lib/id";
+import type { Agent, CreateAgentInput } from "@/types/models";
+import { getLocalAgents, saveLocalAgents } from "./adapters/local-store";
 
 export const agentsService = {
-  async getAgents(): Promise<Agent[]> {
-    if (appConfig.dataMode === "local") {
-      return [MARK_I_MENTOR];
-    }
-
+  async getAgents(uid: string): Promise<Agent[]> {
+    if (appConfig.dataMode === "local") return getLocalAgents(uid);
     return fetchApi<Agent[]>("/agents");
   },
 
-  async getAgent(agentId: string): Promise<Agent> {
+  async getAgent(uid: string, agentId: string): Promise<Agent> {
     if (appConfig.dataMode === "local") {
-      if (agentId !== MARK_I_MENTOR.id) {
-        throw new Error("The selected mentor is not available.");
-      }
-      return MARK_I_MENTOR;
+      const agent = getLocalAgents(uid).find((item) => item.id === agentId);
+      if (!agent) throw new Error("The selected agent is not available.");
+      return agent;
     }
-
     return fetchApi<Agent>(`/agents/${encodeURIComponent(agentId)}`);
+  },
+
+  async createAgent(uid: string, input: CreateAgentInput): Promise<Agent> {
+    if (appConfig.dataMode === "local") {
+      const timestamp = new Date().toISOString();
+      const agent: Agent = {
+        ...input,
+        id: createId("agent"),
+        status: "active",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      saveLocalAgents(uid, [agent, ...getLocalAgents(uid)]);
+      return agent;
+    }
+    return fetchApi<Agent>("/agents", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async updateAgent(
+    uid: string,
+    agentId: string,
+    input: Partial<CreateAgentInput> & { status?: Agent["status"] },
+  ): Promise<Agent> {
+    if (appConfig.dataMode === "local") {
+      const agents = getLocalAgents(uid);
+      const current = agents.find((item) => item.id === agentId);
+      if (!current) throw new Error("The selected agent is not available.");
+      const next: Agent = {
+        ...current,
+        ...input,
+        id: current.id,
+        updatedAt: new Date().toISOString(),
+      };
+      saveLocalAgents(uid, agents.map((item) => item.id === agentId ? next : item));
+      return next;
+    }
+    return fetchApi<Agent>(`/agents/${encodeURIComponent(agentId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async duplicateAgent(uid: string, agentId: string): Promise<Agent> {
+    const source = await this.getAgent(uid, agentId);
+    return this.createAgent(uid, {
+      name: `${source.name} copy`,
+      role: source.role,
+      template: source.template,
+      objective: source.objective,
+      instructions: source.instructions,
+      tone: source.tone,
+      toolGrants: [...source.toolGrants],
+      contextGrants: [...source.contextGrants],
+    });
   },
 };

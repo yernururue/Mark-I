@@ -22,7 +22,24 @@ export const integrationsService = {
       return getLocalIntegrations(uid);
     }
 
-    return fetchApi<IntegrationState>("/integrations");
+    const profile = await fetchApi<{
+      githubConnected: boolean;
+      githubUsername?: string;
+      connectedRepos?: string[];
+      telegramLinked: boolean;
+      telegramUsername?: string;
+    }>("/me");
+    return {
+      github: {
+        status: profile.githubConnected ? "connected" : "disconnected",
+        accountName: profile.githubUsername,
+        repositoryCount: profile.connectedRepos?.length ?? 0,
+      },
+      telegram: {
+        status: profile.telegramLinked ? "connected" : "disconnected",
+        accountName: profile.telegramUsername,
+      },
+    };
   },
 
   async connectGithub(uid: string): Promise<IntegrationState> {
@@ -40,8 +57,8 @@ export const integrationsService = {
       return next;
     }
 
-    const { url } = await fetchApi<{ url: string }>("/github/auth-url");
-    window.location.assign(url);
+    const { authUrl } = await fetchApi<{ authUrl: string }>("/github/auth-url");
+    window.location.assign(authUrl);
     return this.getState(uid);
   },
 
@@ -56,20 +73,22 @@ export const integrationsService = {
       return next;
     }
 
-    await fetchApi<void>("/github/disconnect", { method: "POST" });
+    await fetchApi<void>("/github/disconnect", { method: "DELETE" });
     return this.getState(uid);
   },
 
   async completeGithubConnection(
     uid: string,
     code: string,
+    state: string,
   ): Promise<IntegrationState> {
     if (appConfig.dataMode === "local") {
       return this.connectGithub(uid);
     }
 
-    await fetchApi<void>(`/github/callback?code=${encodeURIComponent(code)}`, {
+    await fetchApi<void>("/github/callback", {
       method: "POST",
+      body: JSON.stringify({ code, state }),
     });
     return this.getState(uid);
   },
@@ -88,7 +107,8 @@ export const integrationsService = {
       return code;
     }
 
-    return fetchApi<TelegramLinkCode>("/telegram/link", { method: "POST" });
+    const response = await fetchApi<{ linkCode: string; expiresAt: string }>("/telegram/link", { method: "POST" });
+    return { code: response.linkCode, expiresAt: response.expiresAt };
   },
 
   async disconnectTelegram(uid: string): Promise<IntegrationState> {
@@ -102,7 +122,7 @@ export const integrationsService = {
       return next;
     }
 
-    await fetchApi<void>("/telegram/disconnect", { method: "POST" });
+    await fetchApi<void>("/telegram/unlink", { method: "DELETE" });
     return this.getState(uid);
   },
 };

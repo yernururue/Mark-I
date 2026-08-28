@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, LogOut, MessageSquare, Settings } from "lucide-react";
+import { Activity, Bot, LogOut, MessageSquare, Settings } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import type { ReactNode } from "react";
 
 const NAVIGATION = [
-  { href: "/dashboard", label: "Dashboard", icon: Activity },
-  { href: "/chat", label: "Mentor chat", icon: MessageSquare },
+  { href: "/dashboard", label: "Workspace", icon: Activity },
+  { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

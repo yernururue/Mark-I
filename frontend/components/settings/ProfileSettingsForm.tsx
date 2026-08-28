@@ -37,12 +37,12 @@ export default function ProfileSettingsForm({
   return (
     <form className="settings-section form-stack" onSubmit={submit}>
       <div className="settings-section__heading">
-        <h2>Mentor profile</h2>
-        <p>These settings shape recommendations, notification thresholds, and tone.</p>
+        <h2>Workspace defaults</h2>
+        <p>These settings provide shared direction and defaults that each agent can override.</p>
       </div>
 
       <label className="field">
-        <span>Development goal</span>
+        <span>Workspace goal</span>
         <textarea
           rows={4}
           maxLength={280}
@@ -53,7 +53,7 @@ export default function ProfileSettingsForm({
 
       <div className="settings-fields">
         <label className="field">
-          <span>Mentor intensity</span>
+          <span>Default notification behavior</span>
           <select
             value={intensity}
             onChange={(event) => setIntensity(event.target.value as Intensity)}

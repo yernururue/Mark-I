@@ -52,7 +52,7 @@ function SettingsContent() {
       <header className="page-header">
         <div>
           <h1>Settings</h1>
-          <p>Manage how Mark-I learns from your work and contacts you.</p>
+          <p>Manage workspace defaults and connected services.</p>
         </div>
       </header>
 

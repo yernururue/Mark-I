@@ -77,9 +77,12 @@ export const userService = {
       return profile;
     }
 
-    return fetchApi<UserProfile>("/users/onboarding", {
+    return fetchApi<UserProfile>("/me", {
       method: "POST",
-      body: JSON.stringify(input),
+      body: JSON.stringify({
+        displayName: identity.displayName ?? identity.email ?? "Mark-I user",
+        ...input,
+      }),
     });
   },
 
@@ -103,7 +106,7 @@ export const userService = {
       return profile;
     }
 
-    return fetchApi<UserProfile>("/users/me", {
+    return fetchApi<UserProfile>("/me", {
       method: "PATCH",
       body: JSON.stringify(input),
     });

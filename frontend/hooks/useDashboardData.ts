@@ -7,6 +7,10 @@ import type { DashboardSnapshot } from "@/types/models";
 
 const EMPTY_DASHBOARD: DashboardSnapshot = {
   profile: null,
+  agents: [],
+  runs: [],
+  artifacts: [],
+  handoffs: [],
   observations: [],
   decisions: [],
 };

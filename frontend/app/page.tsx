@@ -18,10 +18,10 @@ export default function Home() {
       <div className="home-page__grain" aria-hidden="true" />
 
       <main className="home-hero">
-        <h1>A mentor that pays attention to the work you actually do.</h1>
+        <h1>Build a team of agents that works your way.</h1>
         <p>
-          Mark-I watches your GitHub activity, tracks the skills you are building,
-          and tells you what to work on next—without turning every commit into a notification.
+          Create specialized agents, control what each one can access, and run work in parallel
+          with clear ownership, outputs, and handoffs.
         </p>
         <div className="home-hero__actions">
           <Link href="/login?mode=signup" className="button button--light">
@@ -34,7 +34,7 @@ export default function Home() {
       </main>
 
       <footer className="home-footer">
-        <span>Developer growth guidance across web and Telegram.</span>
+        <span>Configurable agents across web, GitHub, and Telegram.</span>
       </footer>
     </div>
   );

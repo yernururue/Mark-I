@@ -5,22 +5,14 @@ import { getErrorMessage } from "@/lib/errors";
 import { createId } from "@/lib/id";
 import { agentsService } from "@/services/agents";
 import { chatService } from "@/services/chat";
-import type {
-  Agent,
-  Conversation,
-  Message,
-  SendMessageInput,
-} from "@/types/models";
+import type { Agent, Conversation, Message, SendMessageInput } from "@/types/models";
 
-function pendingAssistantMessage(
-  agentId: string,
-  conversationId: string,
-): Message {
+function pendingAgentMessage(agentId: string, conversationId: string): Message {
   return {
     id: createId("pending"),
     agentId,
     conversationId,
-    role: "assistant",
+    role: "agent",
     content: "",
     createdAt: new Date().toISOString(),
     status: "sending",
@@ -28,7 +20,8 @@ function pendingAssistantMessage(
 }
 
 export function useChat(uid: string | undefined) {
-  const [agent, setAgent] = useState<Agent | null>(null);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,130 +37,98 @@ export function useChat(uid: string | undefined) {
 
   useEffect(() => {
     if (!uid) return;
-
     let cancelled = false;
-
     const load = async () => {
       try {
-        const [agents, conversations] = await Promise.all([
-          agentsService.getAgents(),
-          chatService.getConversations(uid),
-        ]);
-        const activeAgent = agents[0];
-        const activeConversation = conversations[0];
-
-        if (!activeAgent || !activeConversation) {
-          throw new Error("No mentor conversation is available.");
-        }
-
-        const history = await chatService.getMessages(uid, activeConversation.id);
+        const roster = (await agentsService.getAgents(uid)).filter((agent) => agent.status === "active");
+        const initialIds = roster[0] ? [roster[0].id] : [];
+        const conversations = await chatService.getConversations(uid, initialIds);
+        const activeConversation = conversations[0] ?? null;
+        const history = activeConversation ? await chatService.getMessages(uid, activeConversation.id) : [];
         if (cancelled) return;
-
-        setAgent(activeAgent);
+        setAgents(roster);
+        setSelectedAgentIds(activeConversation?.agentIds.filter((id) => roster.some((agent) => agent.id === id)) ?? initialIds);
         setConversation(activeConversation);
         setMessages(history);
         setError(null);
       } catch (loadError) {
-        if (!cancelled) {
-          setError(getErrorMessage(loadError, "The conversation could not be loaded."));
-        }
+        if (!cancelled) setError(getErrorMessage(loadError, "The conversation could not be loaded."));
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
-
     void load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [revision, uid]);
 
-  const submitMessage = useCallback(
-    async (message: string, existingMessageId?: string) => {
-      const trimmed = message.trim();
-      if (!uid || !agent || !conversation || !trimmed || sending) return;
+  const selectAgents = useCallback(async (agentIds: string[]) => {
+    if (!uid || !conversation || sending || agentIds.length === 0) return;
+    const next = agentIds.filter((id) => agents.some((agent) => agent.id === id));
+    if (next.length === 0) return;
+    setSelectedAgentIds(next);
+    setConversation(await chatService.updateRecipients(uid, conversation.id, next));
+  }, [agents, conversation, sending, uid]);
 
-      const clientMessageId = existingMessageId ?? createId("message");
-      const userMessage: Message = {
-        id: clientMessageId,
-        agentId: agent.id,
-        conversationId: conversation.id,
-        role: "user",
-        content: trimmed,
-        createdAt: new Date().toISOString(),
-        status: "sending",
-      };
-      const pending = pendingAssistantMessage(agent.id, conversation.id);
-      const input: SendMessageInput = {
-        agentId: agent.id,
-        conversationId: conversation.id,
-        message: trimmed,
-        clientMessageId,
-      };
-
-      setSending(true);
-      setError(null);
+  const submitMessage = useCallback(async (message: string, existingMessageId?: string) => {
+    const trimmed = message.trim();
+    if (!uid || !conversation || !trimmed || sending || selectedAgentIds.length === 0) return;
+    const clientMessageId = existingMessageId ?? createId("message");
+    const userMessage: Message = {
+      id: clientMessageId,
+      conversationId: conversation.id,
+      agentId: selectedAgentIds.length === 1 ? selectedAgentIds[0] : undefined,
+      role: "user",
+      content: trimmed,
+      createdAt: new Date().toISOString(),
+      status: "sending",
+    };
+    const pending = selectedAgentIds.map((agentId) => pendingAgentMessage(agentId, conversation.id));
+    const input: SendMessageInput = {
+      agentIds: selectedAgentIds,
+      conversationId: conversation.id,
+      message: trimmed,
+      clientMessageId,
+    };
+    setSending(true);
+    setError(null);
+    setMessages((current) => [
+      ...current.filter((item) => item.id !== clientMessageId && !item.id.startsWith("pending-")),
+      userMessage,
+      ...pending,
+    ]);
+    try {
+      const responses = existingMessageId
+        ? await chatService.retryMessage(uid, input)
+        : await chatService.sendMessage(uid, input);
+      const pendingIds = new Set(pending.map((item) => item.id));
       setMessages((current) => [
-        ...current.filter(
-          (item) => item.id !== clientMessageId && !item.id.startsWith("pending-"),
-        ),
-        userMessage,
-        pending,
+        ...current.filter((item) => !pendingIds.has(item.id)).map((item) => item.id === clientMessageId ? { ...item, status: "sent" as const } : item),
+        ...responses,
       ]);
+    } catch (sendError) {
+      const messageText = getErrorMessage(sendError, "The message could not be sent.");
+      const pendingIds = new Set(pending.map((item) => item.id));
+      setError(messageText);
+      setMessages((current) => current.filter((item) => !pendingIds.has(item.id)).map((item) => item.id === clientMessageId ? { ...item, status: "failed" as const, error: messageText } : item));
+    } finally {
+      setSending(false);
+    }
+  }, [conversation, selectedAgentIds, sending, uid]);
 
-      try {
-        const assistantMessage = existingMessageId
-          ? await chatService.retryMessage(uid, input)
-          : await chatService.sendMessage(uid, input);
-        setMessages((current) => [
-          ...current
-            .filter((item) => item.id !== pending.id)
-            .map((item) =>
-              item.id === clientMessageId ? { ...item, status: "sent" as const } : item,
-            ),
-          assistantMessage,
-        ]);
-      } catch (sendError) {
-        const messageText = getErrorMessage(
-          sendError,
-          "The message could not be sent.",
-        );
-        setError(messageText);
-        setMessages((current) =>
-          current
-            .filter((item) => item.id !== pending.id)
-            .map((item) =>
-              item.id === clientMessageId
-                ? { ...item, status: "failed" as const, error: messageText }
-                : item,
-            ),
-        );
-      } finally {
-        setSending(false);
-      }
-    },
-    [agent, conversation, sending, uid],
-  );
-
-  const retryMessage = useCallback(
-    (messageId: string) => {
-      const failedMessage = messages.find(
-        (message) => message.id === messageId && message.status === "failed",
-      );
-      if (failedMessage) {
-        void submitMessage(failedMessage.content, failedMessage.id);
-      }
-    },
-    [messages, submitMessage],
-  );
+  const retryMessage = useCallback((messageId: string) => {
+    const failed = messages.find((message) => message.id === messageId && message.status === "failed");
+    if (failed) void submitMessage(failed.content, failed.id);
+  }, [messages, submitMessage]);
 
   return {
-    agent,
+    agents,
+    selectedAgentIds,
     conversation,
     messages,
     loading,
     sending,
     error,
+    selectAgents,
     sendMessage: submitMessage,
     retryMessage,
     retryLoad,

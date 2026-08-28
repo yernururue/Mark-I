@@ -119,8 +119,8 @@ export default function AuthForm({
         <h1 id="auth-title">{mode === "signup" ? "Create your account" : "Welcome back"}</h1>
         <p>
           {mode === "signup"
-            ? "Set up your developer growth mentor in a few minutes."
-            : "Continue to your growth dashboard and mentor chat."}
+            ? "Set up your workspace and first agent in a few minutes."
+            : "Continue to your agents, runs, outputs, and conversations."}
         </p>
       </div>
 

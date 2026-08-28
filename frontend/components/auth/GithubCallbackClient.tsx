@@ -8,22 +8,22 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/lib/errors";
 import { integrationsService } from "@/services/integrations";
 
-function CallbackContent({ code }: { code?: string }) {
+function CallbackContent({ code, state }: { code?: string; state?: string }) {
   const { user } = useAuth();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
-    if (!code) {
-      queueMicrotask(() => setError("GitHub did not return an authorization code."));
+    if (!code || !state) {
+      queueMicrotask(() => setError("GitHub did not return a complete authorization response."));
       return;
     }
 
     let cancelled = false;
     const complete = async () => {
       try {
-        await integrationsService.completeGithubConnection(user.uid, code);
+        await integrationsService.completeGithubConnection(user.uid, code, state);
         if (!cancelled) router.replace("/settings?github=connected");
       } catch (callbackError) {
         if (!cancelled) {
@@ -35,7 +35,7 @@ function CallbackContent({ code }: { code?: string }) {
     return () => {
       cancelled = true;
     };
-  }, [code, router, user]);
+  }, [code, router, state, user]);
 
   return error ? (
     <RouteState title="GitHub connection failed" message={error} />
@@ -44,10 +44,10 @@ function CallbackContent({ code }: { code?: string }) {
   );
 }
 
-export default function GithubCallbackClient({ code }: { code?: string }) {
+export default function GithubCallbackClient({ code, state }: { code?: string; state?: string }) {
   return (
     <RouteGuard>
-      <CallbackContent code={code} />
+      <CallbackContent code={code} state={state} />
     </RouteGuard>
   );
 }

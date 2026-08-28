@@ -1,164 +1,162 @@
 import { fetchApi } from "@/lib/api";
 import { appConfig } from "@/lib/config";
 import { createId } from "@/lib/id";
-import type {
-  Conversation,
-  Message,
-  SendMessageInput,
-} from "@/types/models";
-import {
-  getLocalConversations,
-  getLocalMessages,
-  saveLocalConversations,
-  saveLocalMessages,
-} from "./adapters/local-store";
+import type { Agent, AgentRun, Conversation, Message, SendMessageInput } from "@/types/models";
+import { getLocalAgents, getLocalConversations, getLocalMessages, getLocalRuns, saveLocalConversations, saveLocalMessages, saveLocalRuns } from "./adapters/local-store";
 
-const PRIMARY_CONVERSATION_ID = "primary";
-
-function createPrimaryConversation(): Conversation {
-  return {
-    id: PRIMARY_CONVERSATION_ID,
-    agentId: "mark-i-mentor",
-    title: "Growth mentoring",
-    updatedAt: new Date().toISOString(),
-  };
+interface ApiChatResponse {
+  agentId: string;
+  runId: string;
+  response: string;
+  agentMessageId: string;
 }
 
-function localAssistantReply(message: string): string {
+interface ApiMessagesResponse {
+  messages: Array<{
+    id: string;
+    role: "user" | "agent";
+    agentId?: string;
+    runId?: string;
+    text: string;
+    createdAt: string;
+  }>;
+}
+
+function localAgentReply(agent: Agent, message: string): string {
   const normalized = message.toLowerCase();
-
-  if (normalized.includes("github") || normalized.includes("repo")) {
-    return "Connect GitHub in Settings and choose the repositories you want me to watch. Once the backend is connected, I’ll use that activity to track your skills and explain what changed.";
+  if (agent.template === "mentor" && (normalized.includes("github") || normalized.includes("skill"))) {
+    return `${agent.name}: Connect GitHub in Settings, then choose which repositories this agent may use. I’ll attribute observations and decisions to this agent.`;
   }
-
-  if (normalized.includes("job") || normalized.includes("interview")) {
-    return "I can help turn that into a focused plan. Tell me the role you’re targeting and the strongest project you can show today, and we’ll identify the highest-impact gap first.";
+  if (agent.template === "designer") {
+    return `${agent.name}: I can explore a focused direction for that. Give me the audience, the constraint that matters most, and what already exists.`;
   }
-
-  if (normalized.includes("learn") || normalized.includes("skill")) {
-    return "Let’s make the goal measurable. What should you be able to build or explain confidently in the next two weeks?";
-  }
-
-  return "I’ve got it. What outcome would make this feel like meaningful progress, and what is blocking you right now?";
+  return `${agent.name}: I have the assignment. What output should I produce, and which workspace context may I use?`;
 }
 
 function upsertConversation(uid: string, conversation: Conversation): void {
-  const conversations = getLocalConversations(uid);
-  const next = [
-    conversation,
-    ...conversations.filter((item) => item.id !== conversation.id),
-  ];
-  saveLocalConversations(uid, next);
+  const current = getLocalConversations(uid);
+  saveLocalConversations(uid, [conversation, ...current.filter((item) => item.id !== conversation.id)]);
 }
 
 export const chatService = {
-  async getConversations(uid: string): Promise<Conversation[]> {
+  async getConversations(uid: string, agentIds: string[]): Promise<Conversation[]> {
     if (appConfig.dataMode !== "local") {
-      return fetchApi<Conversation[]>("/conversations");
+      return [{ id: "workspace-chat", agentIds, title: "Workspace chat", updatedAt: new Date().toISOString() }];
     }
-
     const conversations = getLocalConversations(uid);
     if (conversations.length > 0) return conversations;
-
-    const primary = createPrimaryConversation();
+    const primary: Conversation = {
+      id: "workspace-chat",
+      agentIds,
+      title: "Workspace chat",
+      updatedAt: new Date().toISOString(),
+    };
     saveLocalConversations(uid, [primary]);
     return [primary];
   },
 
-  async getConversation(uid: string, conversationId: string): Promise<Conversation> {
-    const conversations = await this.getConversations(uid);
-    const conversation = conversations.find((item) => item.id === conversationId);
-
-    if (!conversation) {
-      throw new Error("The conversation could not be found.");
-    }
-
-    return conversation;
-  },
-
-  async createConversation(uid: string, agentId: string): Promise<Conversation> {
-    if (appConfig.dataMode !== "local") {
-      return fetchApi<Conversation>("/conversations", {
-        method: "POST",
-        body: JSON.stringify({ agentId }),
-      });
-    }
-
+  async updateRecipients(uid: string, conversationId: string, agentIds: string[]): Promise<Conversation> {
+    const existing = (await this.getConversations(uid, agentIds)).find((item) => item.id === conversationId);
     const conversation: Conversation = {
-      id: createId("conversation"),
-      agentId,
-      title: "New conversation",
+      id: conversationId,
+      agentIds,
+      title: agentIds.length > 1 ? "Agent group" : "Agent chat",
       updatedAt: new Date().toISOString(),
+      ...existing,
+      agentIds,
     };
-    upsertConversation(uid, conversation);
+    if (appConfig.dataMode === "local") upsertConversation(uid, conversation);
     return conversation;
   },
 
   async getMessages(uid: string, conversationId: string): Promise<Message[]> {
-    if (appConfig.dataMode !== "local") {
-      return fetchApi<Message[]>(
-        `/conversations/${encodeURIComponent(conversationId)}/messages`,
-      );
-    }
-
-    return getLocalMessages(uid, conversationId);
+    if (appConfig.dataMode === "local") return getLocalMessages(uid, conversationId);
+    const response = await fetchApi<ApiMessagesResponse>("/messages?limit=100&channel=web");
+    return response.messages.map((message) => ({
+      id: message.id,
+      conversationId,
+      agentId: message.agentId,
+      runId: message.runId,
+      role: message.role,
+      content: message.text,
+      createdAt: message.createdAt,
+      status: "sent",
+    }));
   },
 
-  async sendMessage(
-    uid: string,
-    input: SendMessageInput,
-  ): Promise<Message> {
+  async sendMessage(uid: string, input: SendMessageInput): Promise<Message[]> {
     if (appConfig.dataMode !== "local") {
-      return fetchApi<Message>("/chat", {
+      const response = await fetchApi<ApiChatResponse>("/chat", {
         method: "POST",
-        body: JSON.stringify(input),
+        body: JSON.stringify({ agentIds: input.agentIds, message: input.message, channel: "web" }),
       });
+      return [{
+        id: response.agentMessageId,
+        conversationId: input.conversationId,
+        agentId: response.agentId,
+        runId: response.runId,
+        role: "agent",
+        content: response.response,
+        createdAt: new Date().toISOString(),
+        status: "sent",
+      }];
     }
 
+    const agents = getLocalAgents(uid).filter((agent) => input.agentIds.includes(agent.id));
+    if (agents.length === 0) throw new Error("Select at least one active agent.");
     const existing = getLocalMessages(uid, input.conversationId);
     const userMessage: Message = {
       id: input.clientMessageId,
       conversationId: input.conversationId,
-      agentId: input.agentId,
+      agentId: input.agentIds.length === 1 ? input.agentIds[0] : undefined,
       role: "user",
       content: input.message,
       createdAt: new Date().toISOString(),
       status: "sent",
     };
-    const withoutDuplicate = existing.filter(
-      (message) => message.id !== input.clientMessageId,
-    );
-    saveLocalMessages(uid, input.conversationId, [
-      ...withoutDuplicate,
-      userMessage,
-    ]);
-
+    const withoutDuplicate = existing.filter((message) => message.id !== input.clientMessageId);
+    saveLocalMessages(uid, input.conversationId, [...withoutDuplicate, userMessage]);
     await new Promise((resolve) => window.setTimeout(resolve, 650));
 
-    const assistantMessage: Message = {
-      id: createId("message"),
-      conversationId: input.conversationId,
-      agentId: input.agentId,
-      role: "assistant",
-      content: localAssistantReply(input.message),
-      createdAt: new Date().toISOString(),
-      status: "sent",
-    };
-    saveLocalMessages(uid, input.conversationId, [
-      ...withoutDuplicate,
-      userMessage,
-      assistantMessage,
-    ]);
+    const timestamp = new Date().toISOString();
+    const responsePairs = agents.map((agent) => {
+      const runId = createId("run-chat");
+      const response: Message = {
+        id: createId("message"),
+        conversationId: input.conversationId,
+        agentId: agent.id,
+        runId,
+        role: "agent",
+        content: localAgentReply(agent, input.message),
+        createdAt: timestamp,
+        status: "sent",
+      };
+      const run: AgentRun = {
+        id: runId,
+        agentId: agent.id,
+        assignment: `Chat: ${input.message}`,
+        status: "completed",
+        progress: "Response delivered in workspace chat",
+        artifactIds: [],
+        createdAt: timestamp,
+        startedAt: timestamp,
+        finishedAt: timestamp,
+      };
+      return { response, run };
+    });
+    const responses = responsePairs.map((pair) => pair.response);
+    saveLocalRuns(uid, [...responsePairs.map((pair) => pair.run), ...getLocalRuns(uid)]);
+    saveLocalMessages(uid, input.conversationId, [...withoutDuplicate, userMessage, ...responses]);
     upsertConversation(uid, {
       id: input.conversationId,
-      agentId: input.agentId,
+      agentIds: input.agentIds,
       title: input.message.slice(0, 48),
-      updatedAt: assistantMessage.createdAt,
+      updatedAt: responses.at(-1)?.createdAt ?? userMessage.createdAt,
     });
-    return assistantMessage;
+    return responses;
   },
 
-  retryMessage(uid: string, input: SendMessageInput): Promise<Message> {
+  retryMessage(uid: string, input: SendMessageInput): Promise<Message[]> {
     return this.sendMessage(uid, input);
   },
 };
