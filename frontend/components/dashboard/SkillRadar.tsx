@@ -16,16 +16,20 @@ export default function SkillRadar({ skills }: SkillRadarProps) {
 
   if (data.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <p className="text-white/40 text-sm font-sans">No skill data yet. Start coding to see your progress!</p>
+      <div className="panel-empty">
+        <h2>Skill profile</h2>
+        <div>
+          <p>No skills have been measured yet.</p>
+          <span>Connect GitHub and Mark-I will build this profile from observed work.</span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full w-full">
-      <h3 className="text-lg font-medium tracking-tight mb-4 text-white/90">Skill Profile</h3>
-      <div className="h-[300px] w-full">
+    <section className="skill-panel">
+      <div className="panel-heading"><h2>Skill profile</h2></div>
+      <div className="skill-chart">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart cx="50%" cy="50%" outerRadius="80%" data={data}>
             <PolarGrid stroke="rgba(255,255,255,0.1)" />
@@ -45,6 +49,6 @@ export default function SkillRadar({ skills }: SkillRadarProps) {
           </RadarChart>
         </ResponsiveContainer>
       </div>
-    </div>
+    </section>
   );
 }

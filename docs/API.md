@@ -1,7 +1,7 @@
 # Mark-I — API Contract
 
-> **Status:** Draft v1.0  
-> **Last updated:** 2026-08-19  
+> **Status:** Draft v1.1  
+> **Last updated:** 2026-08-29  
 > **Canonical source:** `openapi.yaml`  
 > **API Version:** v1  
 > **Base URL:** `https://<backend-url>/api/v1`
@@ -10,7 +10,7 @@
 
 ## Overview
 
-This document defines the REST API contract between frontend and backend. All endpoints are also defined in [openapi.yaml](file:///Users/macbook/Yernur/projects/Mark-I/openapi.yaml), which is the formal API source of truth.
+This document defines the target REST API contract between frontend and backend for the configurable multi-agent workspace. The multi-agent additions below must be reflected in `openapi.yaml` before implementation; until then, this document captures the approved product direction and `openapi.yaml` remains canonical for currently implemented endpoints.
 
 ### Authentication
 
@@ -172,6 +172,65 @@ All fields optional. Only provided fields are updated.
 
 ---
 
+### Agents and Runs (Target Contract)
+
+All agent-scoped resources belong to the authenticated user. The backend must reject an `agentId`, `runId`, artifact, or handoff owned by another user.
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/api/v1/agents` | List the user's agents and current states |
+| `POST` | `/api/v1/agents` | Create an agent from a template or custom configuration |
+| `GET` | `/api/v1/agents/{agentId}` | Read configuration and summary |
+| `PATCH` | `/api/v1/agents/{agentId}` | Update identity, instructions, grants, or lifecycle state |
+| `POST` | `/api/v1/agents/{agentId}/runs` | Start an assignment for one agent |
+| `GET` | `/api/v1/runs` | List/filter runs across all agents |
+| `GET` | `/api/v1/runs/{runId}` | Read run status, progress, and output references |
+| `POST` | `/api/v1/runs/{runId}/cancel` | Cancel one run without affecting others |
+| `GET` | `/api/v1/artifacts/{artifactId}` | Read an authorized agent output |
+| `POST` | `/api/v1/handoffs/{handoffId}/approve` | Approve a proposed agent-to-agent handoff |
+| `POST` | `/api/v1/handoffs/{handoffId}/reject` | Reject a proposed handoff |
+
+#### `POST /api/v1/agents`
+
+```json
+{
+  "name": "Product Designer",
+  "role": "designer",
+  "template": "designer",
+  "objective": "Improve the product experience",
+  "instructions": "Explore two strong directions and explain tradeoffs.",
+  "tone": "concise",
+  "toolGrants": ["read_workspace", "publish_artifact"],
+  "contextGrants": ["product-brief"]
+}
+```
+
+**Response 201:** Agent resource with stable `agentId`, status, and timestamps.
+
+#### `POST /api/v1/agents/{agentId}/runs`
+
+```json
+{
+  "assignment": "Create an improved onboarding direction.",
+  "inputArtifactIds": ["artifact-product-brief"]
+}
+```
+
+**Response 202:**
+
+```json
+{
+  "runId": "run-design-123",
+  "agentId": "agent-designer-456",
+  "status": "queued",
+  "createdAt": "2026-08-29T12:00:00Z"
+}
+```
+
+Starting a run is asynchronous. Multiple agents may have `running` runs simultaneously, subject to per-user limits. Cancellation and failure are isolated to the addressed run.
+
+---
+
 ### Dashboard
 
 ---
@@ -185,6 +244,13 @@ Get aggregated dashboard data in a single request.
 **Response 200:**
 ```json
 {
+  "agents": [
+    { "id": "agent-mentor-123", "name": "Code Mentor", "role": "mentor", "status": "active" },
+    { "id": "agent-designer-456", "name": "Product Designer", "role": "designer", "status": "active" }
+  ],
+  "activeRuns": [
+    { "id": "run-design-123", "agentId": "agent-designer-456", "status": "running", "progress": "Exploring onboarding directions" }
+  ],
   "skills": [
     { "name": "recursion", "score": 4.5, "trend": "up", "lastUpdated": "2026-08-19T12:00:00Z" },
     { "name": "testing", "score": 6.2, "trend": "stable", "lastUpdated": "2026-08-18T15:00:00Z" }
@@ -314,13 +380,14 @@ Get observations for the authenticated user, with pagination and filters.
 
 #### `POST /api/v1/chat`
 
-Send a message to the AI agent. The agent processes the message with full user context and returns a response.
+Send a message to one explicitly addressed agent. The runtime loads that agent's configuration and authorized context. Group addressing may use multiple `agentIds` when enabled.
 
 **Authentication:** Required  
 
 **Request:**
 ```json
 {
+  "agentIds": ["agent-mentor-123"],
   "message": "Why did you notify me about that last commit?",
   "channel": "web"
 }
@@ -328,12 +395,15 @@ Send a message to the AI agent. The agent processes the message with full user c
 
 | Field | Type | Required | Values |
 |-------|------|----------|--------|
+| `agentIds` | array\<string\> | yes | One or more agents owned by the user |
 | `message` | string | yes | 1-2000 chars |
 | `channel` | string | yes | `"web"`, `"telegram"` |
 
 **Response 200:**
 ```json
 {
+  "agentId": "agent-mentor-123",
+  "runId": "run-chat-789",
   "response": "I notified you because your commit to algorithms/recursion.py showed a significant improvement in recursive thinking...",
   "messageId": "msg-789",
   "agentMessageId": "msg-790"
@@ -357,6 +427,7 @@ Get chat message history.
 | `limit` | int | 50 | Max messages to return (1-200) |
 | `cursor` | string | null | Pagination cursor |
 | `channel` | string | null | Filter by channel: `web`, `telegram` |
+| `agentId` | string | null | Filter messages by addressed/responding agent |
 
 **Response 200:**
 ```json
@@ -365,6 +436,8 @@ Get chat message history.
     {
       "id": "msg-789",
       "role": "user",
+      "agentId": "agent-mentor-123",
+      "runId": "run-chat-789",
       "channel": "web",
       "text": "Why did you notify me about that last commit?",
       "createdAt": "2026-08-19T14:00:00Z"
@@ -372,6 +445,8 @@ Get chat message history.
     {
       "id": "msg-790",
       "role": "agent",
+      "agentId": "agent-mentor-123",
+      "runId": "run-chat-789",
       "channel": "web",
       "text": "I notified you because your commit to algorithms/recursion.py showed a significant improvement...",
       "createdAt": "2026-08-19T14:00:01Z"
@@ -636,3 +711,6 @@ These are NOT HTTP endpoints. They are triggered by Pub/Sub or Cloud Scheduler.
 3. **POST /api/v1/me** added for explicit profile creation (onboarding)
 4. **Pagination** added to observations and messages (cursor-based)
 5. **Dashboard** aggregates skills + observations + decisions + stats in one call
+6. **Agents and runs** are first-class resources; every action and output is attributable through `agentId` and `runId`
+7. **Parallel execution** uses asynchronous run creation, with cancellation and failure isolated per run
+8. **Chat routing** requires explicit agent addressing and authorized context retrieval

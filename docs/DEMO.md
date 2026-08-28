@@ -1,7 +1,7 @@
 # Mark-I — Demo Script
 
-> **Status:** Draft v1.0  
-> **Last updated:** 2026-08-19  
+> **Status:** Draft v1.1  
+> **Last updated:** 2026-08-29  
 > **Video length:** 4 minutes maximum  
 > **Target audience:** Hackathon judges (Google Cloud / DevPost)
 
@@ -11,19 +11,19 @@
 
 The demo must prove:
 
-1. **Agentic behavior** — The agent acts proactively, not just reactively
-2. **Google Cloud usage** — Cloud Run, Vertex AI / Gemini, Pub/Sub, Firestore
-3. **Real-world value** — Solves a genuine developer pain point
-4. **Technical quality** — Clean architecture, separation of concerns
-5. **Decision transparency** — Agent explains its reasoning
+1. **Multi-agent product** — Users create specialized agents instead of receiving one fixed assistant
+2. **Parallel execution** — At least two differently configured agents work simultaneously
+3. **Agentic behavior** — Agents act proactively, not just reactively
+4. **Google Cloud usage** — Cloud Run, Vertex AI / Gemini, Pub/Sub, Firestore
+5. **Control and transparency** — Every run has a visible owner, state, context boundary, and output
 
 ---
 
 ## Demo Script (4 minutes)
 
-### Act 1 — The Problem (0:00 – 0:30)
+### Act 1 — The Problem (0:00 – 0:25)
 
-> **Narration:** "As developers, we have tools that track our activity — GitHub stats, LeetCode streaks — but none of them proactively mentor us. No tool watches our code, understands our growth, and decides when to reach out with the right insight at the right time. That's Mark-I."
+> **Narration:** "One AI assistant is expected to mentor, research, design, and plan—one task and one mixed context at a time. Mark-I lets you create the specialized agents you need and run them together, simultaneously."
 
 **Show:**
 - Brief slide/visual of the problem
@@ -31,94 +31,89 @@ The demo must prove:
 
 ---
 
-### Act 2 — Onboarding (0:30 – 1:15)
+### Act 2 — Create an Agent Workspace (0:25 – 1:05)
 
 **Step 1: Sign In**
 - Show Google sign-in on the website
 - Dashboard appears (empty state)
 
-**Step 2: Set Up Profile**
-- Set goal: "Get a developer job"
-- Set intensity: "Normal"
-- Show the profile being saved
+**Step 2: Set Workspace Goal**
+- Set goal: "Take my product from concept to launch"
+- Choose language and notification defaults
 
-**Step 3: Connect GitHub**
-- Click "Connect GitHub"
-- OAuth flow completes
-- Select a repo to monitor
-- Show webhook confirmation
+**Step 3: Create Specialized Agents**
+- Create a mentor agent from the developer-growth template
+- Create a designer agent from the product-design template
+- Briefly show that each has separate instructions, tools, and context access
 
-**Step 4: Link Telegram**
-- Generate link code on website
-- Switch to Telegram
-- Send `/start` to the bot
-- Send `/link ABC123`
-- Bot confirms: "✅ Account linked! I'll start watching your coding activity."
+**Step 4: Show the Agent Roster**
+- Mentor: GitHub access, proactive notifications, normal tone
+- Designer: workspace brief access, artifact publishing, concise critique tone
+- Both agents are active and independently configurable
 
-> **Narration:** "In under a minute, Mark-I knows your goal, is watching your GitHub repos, and can reach you on Telegram."
+> **Narration:** "These are not modes of one assistant. They are separate user-created agents with their own roles, instructions, access, and run histories."
 
 ---
 
-### Act 3 — GitHub Activity → Agent Reaction (1:15 – 2:30)
+### Act 3 — Parallel Agent Execution (1:05 – 2:10)
 
-**Step 5: Push Code**
-- Show a commit being pushed to the connected repo
-- Briefly show the code (something with recursion / data structures)
+**Step 5: Assign Work**
+- Ask the mentor agent to analyze the current implementation and propose a learning plan
+- Ask the designer agent to produce an improved onboarding direction
+- Start both assignments together
 
-**Step 6: Behind the Scenes**
-- Show Cloud Run logs: webhook received
-- Show Pub/Sub message in Cloud Console (brief)
-- Mention: "The event is processed asynchronously via Pub/Sub"
+**Step 6: Show Concurrent Runs**
+- Run timeline shows both agents as `running`
+- Briefly show separate `agentId` and `runId` values in Cloud Run logs
+- Mention that Pub/Sub dispatches isolated workers concurrently
 
-**Step 7: Agent Analysis**
-- Show Vertex AI / Gemini API call in logs
-- Narrate: "Gemini analyzes the diff and identifies concepts, proficiency level, and significance"
+**Step 7: Inspect Outputs**
+- Mentor completes with an implementation/learning plan
+- Designer completes with a product artifact
+- Show that each output identifies its agent and originating run
+- Show one explicit shared artifact or handoff between agents
 
-**Step 8: Observation + Skill Update**
-- Dashboard shows new observation in feed
-- Skill chart updates (recursion score changes)
+> **Narration:** "Both agents worked at the same time. Their contexts stayed separate, their outputs stayed attributable, and collaboration happened through a visible handoff—not hidden shared memory."
 
-**Step 9: Decision Policy**
+---
+
+### Act 4 — Proactive Mentor Agent (2:10 – 3:00)
+
+**Step 8: Push Code**
+- Push a prepared commit to the connected repository
+- Show the webhook entering the event router and being assigned to the mentor agent
+
+**Step 9: Analysis and Decision Policy**
+- Dashboard shows a skill update and observation owned by the mentor agent
 - Show the decision log on dashboard: "Notified: significance 7 >= threshold 5 (normal intensity)"
-- Narrate: "This is a deterministic decision policy — not a black box. The agent judges significance, but the notification decision is explicit code."
+- Narrate: "The mentor agent judges significance, while deterministic policy decides whether notification is allowed."
 
 **Step 10: Telegram Notification**
 - Switch to Telegram
 - Show the notification: "📊 I noticed you worked on recursive tree traversal in PR #42. Your recursion skill improved to 4.5/10. The base case handling was solid — consider exploring tail recursion next."
 
-> **Narration:** "The agent didn't just log a stat. It understood the code, assessed proficiency, and decided this was worth telling you about."
-
----
-
-### Act 4 — Silence as a Decision (2:30 – 3:00)
-
-**Step 11: Another Commit (trivial)**
-- Push a small commit (typo fix / README update)
-- Show: observation created but decision = "silent"
-- Dashboard shows: "Stayed silent: significance 2 < threshold 5"
-
-> **Narration:** "Mark-I knows when to stay quiet. A typo fix doesn't deserve a notification. This is what makes it a mentor, not a spambot."
+> **Narration:** "Mentoring is one agent specialization inside Mark-I—not the whole product. The same workspace can host any specialist the user configures."
 
 ---
 
 ### Act 5 — Conversation + Cross-Channel (3:00 – 3:30)
 
-**Step 12: Ask the Agent (Telegram)**
-- In Telegram: "What should I focus on next?"
-- Agent responds with personalized advice based on skill profile
+**Step 11: Address a Specific Agent**
+- In Telegram, ask the mentor agent: "What should I focus on next?"
+- The response clearly identifies the mentor agent
 
-**Step 13: Same Conversation on Web**
+**Step 12: Same Conversation on Web**
 - Switch to web chat
 - Show the same conversation visible on the website
-- Send a follow-up question from web
+- Address the designer agent in a new thread to demonstrate identity and context separation
 
-> **Narration:** "Same agent, same conversation, whether you're on Telegram or the web."
+> **Narration:** "The channel can change without losing agent identity, run ownership, or the correct context."
 
 ---
 
 ### Act 6 — Architecture + Wrap-up (3:30 – 4:00)
 
-**Step 14: Architecture Diagram**
+**Step 13: Architecture Diagram**
 - Show the system architecture diagram
 - Highlight Google Cloud components:
   - ☁️ Cloud Run (backend)
@@ -128,8 +123,8 @@ The demo must prove:
   - ⏰ Cloud Scheduler (opportunity discovery)
   - 🔐 Secret Manager (credential storage)
 
-**Step 15: Closing**
-> **Narration:** "Mark-I is an AI agent that watches your code, tracks your growth, discovers opportunities, and mentors you proactively — knowing when to speak and when to listen. Built entirely on Google Cloud."
+**Step 14: Closing**
+> **Narration:** "Mark-I is your configurable multi-agent workspace. Create a mentor, designer, researcher, or any specialist you need—then let them work in parallel with clear context, control, and accountability. Built on Google Cloud."
 
 ---
 

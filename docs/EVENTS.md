@@ -1,7 +1,7 @@
 # Mark-I — Event Architecture
 
-> **Status:** Draft v1.0  
-> **Last updated:** 2026-08-19
+> **Status:** Draft v1.1  
+> **Last updated:** 2026-08-29
 
 ---
 
@@ -13,6 +13,7 @@ Mark-I uses an event-driven architecture for asynchronous processing. Webhook ev
 2. **Retry safety** — Pub/Sub retries failed messages
 3. **Idempotency** — Deduplication via `processed_events` collection
 4. **Scalability** — Workers can scale independently
+5. **Concurrent agents** — Each assignment is dispatched as an isolated run carrying `uid`, `agentId`, and `runId`
 
 ---
 
@@ -39,20 +40,21 @@ GitHub Worker (Cloud Run / push subscription)
     │
     ├─ 7.  Receive Pub/Sub message
     ├─ 8.  Double-check deduplication
-    ├─ 9.  Load user context (profile, skills, recent observations)
-    ├─ 10. Fetch diff/PR content from GitHub API (if needed)
-    ├─ 11. Send to Gemini for analysis
+    ├─ 9.  Resolve subscribed mentor agent and create run record
+    ├─ 10. Load agent configuration and authorized context
+    ├─ 11. Fetch diff/PR content from GitHub API (if needed)
+    ├─ 12. Send to the configured agent runtime for analysis
     │       → Structured output: concept, proficiency, sentiment, significance
-    ├─ 12. Create observation in Firestore
-    ├─ 13. Update skill scores (weighted average)
-    ├─ 14. Run Decision Policy
+    ├─ 13. Create observation with agentId + runId
+    ├─ 14. Update skill scores (weighted average)
+    ├─ 15. Run Decision Policy
     │       → Evaluate significance vs threshold
     │       → Check escalation rules
     │       → Record decision
-    ├─ 15. If decision = notify:
+    ├─ 16. If decision = notify:
     │       → Send Telegram message
-    ├─ 16. Write to processed_events/{deliveryId}
-    └─ 17. ACK Pub/Sub message
+    ├─ 17. Complete run and write to processed_events/{deliveryId}
+    └─ 18. ACK Pub/Sub message
 ```
 
 #### GitHub Event Details
@@ -84,15 +86,16 @@ Opportunity Worker (Cloud Run)
     ├─ 2. Fetch content from configured sources
     │       → RSS feeds, APIs, scraping
     ├─ 3. For each user with a configured goal:
-    │       ├─ 4. Load user context (goal, skills, recent observations)
-    │       ├─ 5. Send items + user context to Gemini
+    │       ├─ 4. Resolve authorized opportunity-discovery agent(s)
+    │       ├─ 5. Create run and load permitted agent/workspace context
+    │       ├─ 6. Send items to the configured agent runtime
     │       │       → Relevance score (0-10) per item per user
-    │       ├─ 6. For items with relevance >= 6:
-    │       │       ├─ Create observation (source: "opportunity")
+    │       ├─ 7. For items with relevance >= 6:
+    │       │       ├─ Create observation with agentId + runId
     │       │       ├─ Run Decision Policy
     │       │       └─ If decision = notify: Send Telegram message
-    │       └─ 7. Continue to next user
-    └─ 8. ACK Pub/Sub message
+    │       └─ 8. Complete run and continue to next user
+    └─ 9. ACK Pub/Sub message
 ```
 
 #### Opportunity Sources
@@ -133,12 +136,13 @@ POST /api/v1/webhooks/telegram
     └─ If REGULAR MESSAGE:
             ├─ 3c. Identify user by telegramUserId
             ├─ 4c. If user not linked → send "Please link your account" message
-            ├─ 5c. Load user context
-            ├─ 6c. Store user message in Firestore (channel: "telegram")
-            ├─ 7c. Send to ADK Agent
-            ├─ 8c. Store agent response in Firestore (channel: "telegram")
-            ├─ 9c. Send response via Telegram Bot API
-            └─ 10c. Return 200
+            ├─ 5c. Resolve addressed/default agent
+            ├─ 6c. Load agent config and authorized context
+            ├─ 7c. Store message with agentId + runId
+            ├─ 8c. Send to configured agent runtime
+            ├─ 9c. Store identified agent response
+            ├─ 10c. Send response via Telegram Bot API
+            └─ 11c. Return 200
 ```
 
 ---
@@ -149,12 +153,13 @@ POST /api/v1/webhooks/telegram
 Frontend sends POST /api/v1/chat
     │
     ├─ 1. Verify Firebase ID token
-    ├─ 2. Load user context (profile, skills, observations)
-    ├─ 3. Store user message in Firestore (channel: "web")
-    ├─ 4. Send to ADK Agent with context
-    ├─ 5. Receive agent response
-    ├─ 6. Store agent response in Firestore (channel: "web")
-    └─ 7. Return response to frontend
+    ├─ 2. Validate addressed agentId(s)
+    ├─ 3. Create run and load authorized agent/workspace context
+    ├─ 4. Store user message with agentId + runId
+    ├─ 5. Send to configured agent runtime
+    ├─ 6. Receive identified agent response
+    ├─ 7. Store agent response with agentId + runId
+    └─ 8. Return response to frontend
     
 Frontend picks up new messages via Firestore onSnapshot listener
 ```

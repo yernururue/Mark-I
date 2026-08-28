@@ -1,113 +1,49 @@
-import { useState, useEffect } from 'react';
-import { db } from '@/lib/firebase';
-import { doc, collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
+"use client";
 
-export interface UserProfile {
-  goal?: string;
-  intensity?: string;
-  language?: string;
-  skills?: Record<string, number>;
-}
+import { useCallback, useEffect, useState } from "react";
+import { getErrorMessage } from "@/lib/errors";
+import { subscribeDashboard } from "@/services/dashboard";
+import type { DashboardSnapshot } from "@/types/models";
 
-export interface Observation {
-  id: string;
-  source: string;
-  summary: string;
-  concept: string;
-  sentiment: string;
-  significance_score: number;
-  timestamp: string;
-}
-
-export interface Decision {
-  id: string;
-  trigger: string;
-  significance_score: number;
-  threshold: number;
-  action_taken: string;
-  reason: string;
-  timestamp: string;
-}
-
-export interface Agent {
-  id: string;
-  name: string;
-  icon: string;
-  color: string;
-  timestamp: string;
-}
+const EMPTY_DASHBOARD: DashboardSnapshot = {
+  profile: null,
+  observations: [],
+  decisions: [],
+};
 
 export function useDashboardData(uid: string | undefined) {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [observations, setObservations] = useState<Observation[]>([]);
-  const [decisions, setDecisions] = useState<Decision[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const [data, setData] = useState<DashboardSnapshot>(EMPTY_DASHBOARD);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+
+  const retry = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    setRevision((value) => value + 1);
+  }, []);
 
   useEffect(() => {
-    if (!uid) {
-      setProfile(null);
-      setObservations([]);
-      setDecisions([]);
-      setAgents([]);
-      setLoading(false);
-      return;
-    }
+    if (!uid) return;
 
-    setLoading(true);
+    return subscribeDashboard(
+      uid,
+      (snapshot) => {
+        setData(snapshot);
+        setError(null);
+        setLoading(false);
+      },
+      (subscriptionError) => {
+        setError(
+          getErrorMessage(
+            subscriptionError,
+            "Dashboard data could not be loaded.",
+          ),
+        );
+        setLoading(false);
+      },
+    );
+  }, [revision, uid]);
 
-    // 1. Subscribe to user profile
-    const profileRef = doc(db, 'users', uid);
-    const unsubProfile = onSnapshot(profileRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setProfile(docSnap.data() as UserProfile);
-      } else {
-        setProfile(null);
-      }
-    });
-
-    // 2. Subscribe to observations
-    const obsRef = collection(db, 'users', uid, 'observations');
-    const obsQuery = query(obsRef, orderBy('timestamp', 'desc'), limit(20));
-    const unsubObs = onSnapshot(obsQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Observation[];
-      setObservations(data);
-    });
-
-    // 3. Subscribe to decisions
-    const decRef = collection(db, 'users', uid, 'decisions');
-    const decQuery = query(decRef, orderBy('timestamp', 'desc'), limit(10));
-    const unsubDec = onSnapshot(decQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Decision[];
-      setDecisions(data);
-    });
-
-    // 4. Subscribe to agents
-    const agentsRef = collection(db, 'users', uid, 'agents');
-    const agentsQuery = query(agentsRef, orderBy('timestamp', 'desc'));
-    const unsubAgents = onSnapshot(agentsQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Agent[];
-      setAgents(data);
-    });
-
-    setLoading(false);
-
-    return () => {
-      unsubProfile();
-      unsubObs();
-      unsubDec();
-      unsubAgents();
-    };
-  }, [uid]);
-
-  return { profile, observations, decisions, agents, loading };
+  return { ...data, loading, error, retry };
 }

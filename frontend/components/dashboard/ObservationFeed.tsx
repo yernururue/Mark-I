@@ -1,11 +1,22 @@
-import { Observation } from '@/hooks/useDashboardData';
-import { GitBranch, MessageSquare, Briefcase, Activity } from 'lucide-react';
+"use client";
+
+import { useMemo, useState } from "react";
+import { GitBranch, MessageSquare, Briefcase, Activity } from "lucide-react";
+import type { Observation, ObservationSource } from "@/types/models";
 
 interface ObservationFeedProps {
   observations: Observation[];
 }
 
 export default function ObservationFeed({ observations }: ObservationFeedProps) {
+  const [source, setSource] = useState<ObservationSource | "all">("all");
+  const visibleObservations = useMemo(
+    () =>
+      source === "all"
+        ? observations
+        : observations.filter((observation) => observation.source === source),
+    [observations, source],
+  );
   const getIcon = (source: string) => {
     switch (source.toLowerCase()) {
       case 'github':
@@ -32,50 +43,60 @@ export default function ObservationFeed({ observations }: ObservationFeedProps) 
 
   if (observations.length === 0) {
     return (
-      <div className="h-full flex flex-col">
-        <h3 className="text-lg font-medium tracking-tight mb-4 text-white/90">Activity Feed</h3>
-        <div className="flex-1 flex items-center justify-center border border-white/5 bg-white/[0.02] rounded-md p-6">
-          <p className="text-white/40 text-sm font-sans">No activity recorded yet.</p>
+      <div className="panel-empty">
+        <h2>Recent activity</h2>
+        <div>
+          <p>No activity has been recorded yet.</p>
+          <span>Connect GitHub or start a mentor conversation to create the first observation.</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <h3 className="text-lg font-medium tracking-tight mb-4 text-white/90">Activity Feed</h3>
-      <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-        {observations.map((obs) => (
-          <div key={obs.id} className="p-4 border border-white/10 bg-white/5 rounded-md hover:bg-white/10 transition-colors">
-            <div className="flex items-start gap-3">
-              <div className="mt-1 p-2 bg-white/5 rounded-full">
+    <section className="activity-panel">
+      <div className="panel-heading">
+        <h2>Recent activity</h2>
+        <div className="filter-tabs" aria-label="Filter activity by source">
+          {(["all", "github", "chat", "opportunity"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              aria-pressed={source === item}
+              onClick={() => setSource(item)}
+            >
+              {item === "all" ? "All" : item}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="activity-list">
+        {visibleObservations.length === 0 ? (
+          <p className="activity-list__empty">No {source} activity in this view.</p>
+        ) : null}
+        {visibleObservations.map((obs) => (
+          <article key={obs.id} className="activity-item">
+            <div className="activity-item__icon">
                 {getIcon(obs.source)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-xs font-mono text-[#f05638] uppercase tracking-wider">
+            </div>
+            <div className="activity-item__body">
+                <div className="activity-item__meta">
+                  <span>
                     {obs.concept}
                   </span>
-                  <span className="text-xs text-white/30">
-                    {new Date(obs.timestamp).toLocaleDateString()}
-                  </span>
+                  <time dateTime={obs.createdAt}>{new Date(obs.createdAt).toLocaleDateString()}</time>
                 </div>
-                <p className="text-sm text-white/80 font-sans leading-relaxed">
-                  {obs.summary}
-                </p>
-                <div className="mt-2 flex items-center gap-4">
+                <p>{obs.summary}</p>
+                <div className="activity-item__details">
                   <span className={`text-xs ${getSentimentColor(obs.sentiment)} capitalize`}>
                     {obs.sentiment} sentiment
                   </span>
-                  <span className="text-xs text-white/40">
-                    Sig: {obs.significance_score}/10
-                  </span>
+                  <span>Significance {obs.significanceScore}/10</span>
                 </div>
-              </div>
             </div>
-          </div>
+          </article>
         ))}
       </div>
-    </div>
+    </section>
   );
 }

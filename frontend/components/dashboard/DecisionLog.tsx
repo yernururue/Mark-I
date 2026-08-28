@@ -1,5 +1,5 @@
-import { Decision } from '@/hooks/useDashboardData';
-import { Bell, BellOff, Info } from 'lucide-react';
+import { Bell, BellOff } from "lucide-react";
+import type { Decision } from "@/types/models";
 
 interface DecisionLogProps {
   decisions: Decision[];
@@ -8,74 +8,56 @@ interface DecisionLogProps {
 export default function DecisionLog({ decisions }: DecisionLogProps) {
   if (decisions.length === 0) {
     return (
-      <div className="h-full flex flex-col">
-        <div className="flex items-center gap-2 mb-4">
-          <h3 className="text-lg font-medium tracking-tight text-white/90">Decision Engine</h3>
-          <Info className="w-4 h-4 text-white/40" />
-        </div>
-        <div className="flex-1 flex items-center justify-center border border-white/5 bg-white/[0.02] rounded-md p-6">
-          <p className="text-white/40 text-sm font-sans text-center">
-            No agent decisions made yet. The agent is quietly observing.
-          </p>
+      <div className="panel-empty">
+        <h2>Decision log</h2>
+        <div>
+          <p>No notification decisions yet.</p>
+          <span>Mark-I will show both notifications and deliberate silence here.</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center gap-2 mb-4">
-        <h3 className="text-lg font-medium tracking-tight text-white/90">Decision Engine</h3>
-        <span title="Shows why the AI mentor decided to contact you or stay silent." className="cursor-help">
-          <Info className="w-4 h-4 text-white/40" />
-        </span>
+    <section className="decision-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Decision log</h2>
+          <p>Why Mark-I notified you—or chose not to.</p>
+        </div>
       </div>
       
-      <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+      <div className="decision-list">
         {decisions.map((dec) => {
-          const notified = dec.action_taken === 'notify';
+          const notified = dec.action === "notify";
           
           return (
-            <div 
+            <article
               key={dec.id} 
-              className={`p-4 border rounded-md transition-colors ${
-                notified 
-                  ? 'border-[#f05638]/30 bg-[#f05638]/5' 
-                  : 'border-white/10 bg-white/5 opacity-80'
-              }`}
+              className="decision-item"
+              data-action={notified ? "notify" : "silent"}
             >
-              <div className="flex items-start gap-3">
-                <div className={`mt-1 ${notified ? 'text-[#f05638]' : 'text-white/40'}`}>
-                  {notified ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className={`text-xs font-mono uppercase tracking-wider ${notified ? 'text-[#f05638]' : 'text-white/50'}`}>
-                      {notified ? 'NOTIFIED' : 'SILENT'}
-                    </span>
-                    <span className="text-xs text-white/30">
-                      {new Date(dec.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                  
-                  <p className="text-sm text-white/90 font-sans mb-2 font-medium">
-                    Trigger: {dec.trigger}
-                  </p>
-                  
-                  <div className="text-xs text-white/60 bg-black/20 p-2 rounded border border-white/5 font-mono">
-                    <span className="text-white/40">Reason: </span>
-                    {dec.reason}
-                    <div className="mt-1 flex items-center gap-3">
-                      <span>Score: {dec.significance_score}</span>
-                      <span>Threshold: {dec.threshold}</span>
-                    </div>
-                  </div>
-                </div>
+              <div className="decision-item__icon" aria-hidden="true">
+                {notified ? <Bell size={17} /> : <BellOff size={17} />}
               </div>
-            </div>
+              <div className="decision-item__body">
+                <div className="decision-item__meta">
+                  <span>{notified ? "Notified" : "Stayed silent"}</span>
+                  <time dateTime={dec.createdAt}>
+                    {new Date(dec.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </time>
+                </div>
+                <h3>{dec.trigger}</h3>
+                <p>{dec.reason}</p>
+                <dl>
+                  <div><dt>Score</dt><dd>{dec.significanceScore}</dd></div>
+                  <div><dt>Threshold</dt><dd>{dec.threshold}</dd></div>
+                </dl>
+              </div>
+            </article>
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }
