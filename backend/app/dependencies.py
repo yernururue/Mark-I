@@ -2,18 +2,28 @@
 dependencies.py — Глобальные подключения (база данных, GCP сервисы, HTTP клиент).
 """
 
-from typing import Optional
+from typing import Any, Optional
 import firebase_admin
 from firebase_admin import credentials, firestore
 import httpx
 from google.cloud import pubsub_v1, secretmanager
 from google.cloud.firestore_v1.client import Client as FirestoreClient
 
-from app.config import settings
+from app.config import Settings, get_settings
+from fastapi import Depends, HTTPException
+
+from app.middleware.auth import get_current_user
+from app.services.chat_service import ChatService
+from app.services.decision_service import DecisionService
 from app.services.github_service import GitHubService
+from app.services.observation_service import ObservationService
+from app.services.opportunity_service import OpportunityService
+from app.services.skill_service import SkillService
+from app.services.telegram_service import TelegramService
+from app.services.user_service import UserService
 
 
-def _initialize_firebase() -> None:
+def _initialize_firebase(settings: Settings) -> None:
     """Подключение к сервисам Google (Firebase)."""
     if firebase_admin._apps:
         return
@@ -34,7 +44,8 @@ def get_firestore_client() -> FirestoreClient:
     """Функция, которая выдает подключение к базе данных Firestore (Singleton)."""
     global _firestore_client
 
-    _initialize_firebase()
+    settings = get_settings()
+    _initialize_firebase(settings)
 
     if _firestore_client is None:
         _firestore_client = firestore.client(
@@ -43,6 +54,19 @@ def get_firestore_client() -> FirestoreClient:
         )
 
     return _firestore_client
+
+
+def get_db() -> FirestoreClient:
+    """Canonical Firestore dependency, intentionally override-friendly in tests."""
+    return get_firestore_client()
+
+
+async def get_current_user_id(current_user: dict[str, Any] = Depends(get_current_user)) -> str:
+    """Return only the verified Firebase UID required by most routes."""
+    uid = current_user.get("uid")
+    if not isinstance(uid, str) or not uid:
+        raise HTTPException(status_code=401, detail="Authenticated token does not contain uid")
+    return uid
 
 
 def get_httpx_client() -> httpx.AsyncClient:
@@ -77,7 +101,6 @@ def get_secret_client() -> secretmanager.SecretManagerServiceClient:
     return _secret_client
 
 
-from fastapi import Depends
 def get_github_service(
     db: FirestoreClient = Depends(get_firestore_client),
     httpx_client: httpx.AsyncClient = Depends(get_httpx_client),
@@ -90,5 +113,33 @@ def get_github_service(
         httpx_client=httpx_client,
         secret_client=secret_client,
         pubsub_publisher=pubsub_publisher,
-        settings=settings,
+        settings=get_settings(),
     )
+
+
+def get_user_service(db: FirestoreClient = Depends(get_db)) -> UserService:
+    return UserService(db)
+
+
+def get_chat_service(db: FirestoreClient = Depends(get_db)) -> ChatService:
+    return ChatService(db)
+
+
+def get_skill_service(db: FirestoreClient = Depends(get_db)) -> SkillService:
+    return SkillService(db)
+
+
+def get_observation_service(db: FirestoreClient = Depends(get_db)) -> ObservationService:
+    return ObservationService(db)
+
+
+def get_telegram_service(db: FirestoreClient = Depends(get_db)) -> TelegramService:
+    return TelegramService(db)
+
+
+def get_decision_service(db: FirestoreClient = Depends(get_db)) -> DecisionService:
+    return DecisionService(db)
+
+
+def get_opportunity_service(db: FirestoreClient = Depends(get_db)) -> OpportunityService:
+    return OpportunityService(db)

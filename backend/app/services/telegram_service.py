@@ -1,4 +1,3 @@
-import os
 import uuid
 import random
 import string
@@ -7,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 import logging
 
 from google.cloud.firestore_v1.client import Client as FirestoreClient
+from app.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +20,10 @@ def get_http_client() -> httpx.AsyncClient:
     return _http_client
 
 class TelegramService:
-    def __init__(self, db: FirestoreClient):
+    def __init__(self, db: FirestoreClient, settings: Settings | None = None):
         self._db = db
-        # Usually from config, but let's read from env directly or pass via config
-        self._bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        settings = settings or get_settings()
+        self._bot_token = settings.TELEGRAM_BOT_TOKEN or ""
 
     def _get_codes_collection(self):
         return self._db.collection("telegram_link_codes")

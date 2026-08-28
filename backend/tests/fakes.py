@@ -62,8 +62,8 @@ class FakeQuery:
         values.update(changes)
         return FakeQuery(**values)
 
-    def where(self, *, filter: tuple[str, str, Any]) -> "FakeQuery":
-        return self._clone(filters=(*self._filters, filter))
+    def where(self, *, filter: Any) -> "FakeQuery":
+        return self._clone(filters=(*self._filters, (filter.field_path, filter.op_string, filter.value)))
 
     def order_by(self, field: str, direction: str = "ASCENDING") -> "FakeQuery":
         return self._clone(order=(field, direction))
@@ -160,9 +160,4 @@ class FakeFirestore:
 
     def transaction(self) -> FakeTransaction:
         return FakeTransaction()
-
-    def transactional(self, function):
-        """Test double for the intent of SkillService's transaction wrapper."""
-
-        return function
 

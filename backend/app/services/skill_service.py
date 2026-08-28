@@ -1,15 +1,26 @@
 from datetime import datetime, timezone
-from typing import List
+import math
+from typing import Callable, List
 
+from google.cloud import firestore
 from google.cloud.firestore_v1.client import Client as FirestoreClient
 from google.cloud.firestore_v1.transforms import DELETE_FIELD
 
 from app.models.skill import SkillDetail
 from app.services.observation_service import ObservationService
 
+
+class SkillUpdateError(ValueError):
+    """Invalid skill-update input that must not open a transaction."""
+
+
+class UserNotFoundError(LookupError):
+    """Skill updates require an existing user document."""
+
 class SkillService:
-    def __init__(self, db: FirestoreClient):
+    def __init__(self, db: FirestoreClient, transactional_runner: Callable = firestore.transactional):
         self._db = db
+        self._transactional_runner = transactional_runner
         self._collection = db.collection("users")
         self._obs_service = ObservationService(db)
 
@@ -42,21 +53,27 @@ class SkillService:
         result.sort(key=lambda x: x.score, reverse=True)
         return result
 
-    def update_skill(self, uid: str, concept: str, assessment: int, weight: float = 0.3) -> float:
+    def update_skill(self, uid: str, concept: str, assessment: float, weight: float = 0.3) -> float:
         """
         Updates a skill score based on a new assessment (1-10) and returns the new score.
         Formula: new = old * (1 - weight) + assessment * weight
         """
+        if not concept or not concept.strip():
+            raise SkillUpdateError("concept must be non-empty")
+        if not math.isfinite(assessment) or not 0 <= assessment <= 10:
+            raise SkillUpdateError("assessment must be a finite value from 0 to 10")
+        if not math.isfinite(weight) or not 0 <= weight <= 1:
+            raise SkillUpdateError("weight must be a finite value from 0 to 1")
         doc_ref = self._collection.document(uid)
         
         # We need transaction to ensure atomic read-modify-write
         transaction = self._db.transaction()
         
-        @self._db.transactional
+        @self._transactional_runner
         def update_in_transaction(transaction, doc_ref):
             snapshot = doc_ref.get(transaction=transaction)
             if not snapshot.exists:
-                return 0.0
+                raise UserNotFoundError(f"User {uid!r} does not exist")
                 
             data = snapshot.to_dict()
             skills = data.get("skills", {})
@@ -68,9 +85,9 @@ class SkillService:
                 new_score = round(current_score * (1 - weight) + assessment * weight, 2)
                 
             # Update only the specific skill field
-            transaction.update(doc_ref, {
-                f"skills.{concept}": new_score
-            })
+            # Replacing the map avoids interpreting dots in a user-provided concept
+            # as Firestore nested field paths.
+            transaction.update(doc_ref, {"skills": {**skills, concept: new_score}})
             
             return new_score
 

@@ -3,11 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 
-import app.config as config_module
-
-# Temporary test seam: the missing production accessor has its own strict xfail regression.
-config_module.get_settings = lambda: config_module.settings
-
 from app.services import opportunity_service as opportunity_module  # noqa: E402
 from tests.fakes import FakeFirestore  # noqa: E402
 
@@ -103,4 +98,3 @@ def test_devto_timeout_or_error_returns_error_status(monkeypatch):
     assert result["status"] == "error"
     assert "timeout" in result["message"]
     assert publisher.messages == []
-
