@@ -232,34 +232,34 @@ plans:
 
   - name: backend-remediation-stage-2-github-pipeline
     path: docs/plans/2026-08-29-backend-remediation-stage-2-github-pipeline/
-    status: planned
+    status: in-progress
     created: 2026-08-29
-    started:
+    started: 2026-08-29
     shipped:
     source: docs/reports/2026-08-28-backend-remediation-roadmap.md
     approval_required: true
     tasks:
       - name: event-envelope
         file: 01-event-envelope.md
-        status: pending
+        status: done
         description: "Единая versioned Pydantic GitHubEventEnvelope модель, owner lookup по connectedRepos и fan-out Pub/Sub messages по uid"
         depends_on: backend-remediation-stage-1-runtime-foundation
 
       - name: idempotency-and-retries
         file: 02-idempotency-and-retries.md
-        status: pending
+        status: done
         description: "processed_events/github:{deliveryId}:{uid}, deterministic effects, корректные ack/nack, lease и retry policy"
         depends_on: event-envelope
 
       - name: github-event-extractors
         file: 03-github-event-extractors.md
-        status: pending
+        status: done
         description: "Typed contexts и extractors для push, pull_request, pull_request_review, issues, issue_comment и create"
         depends_on: event-envelope
 
       - name: assessment-and-escalation
         file: 04-assessment-and-escalation.md
-        status: pending
+        status: done
         description: "Разделение proficiency/significance и deterministic supported escalation flags с PICT regression coverage"
         depends_on:
           - idempotency-and-retries

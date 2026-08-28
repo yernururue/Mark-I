@@ -23,13 +23,14 @@ class ObservationService:
         concept: str,
         sentiment: str,
         significance_score: int,
-        metadata: Optional[dict] = None
+        metadata: Optional[dict] = None,
+        observation_id: Optional[str] = None,
     ) -> Observation:
         """
         Creates a new observation in Firestore.
         """
         now = datetime.now(timezone.utc)
-        obs_id = f"obs-{uuid.uuid4().hex[:12]}"
+        obs_id = observation_id or f"obs-{uuid.uuid4().hex[:12]}"
         
         doc_data = {
             "id": obs_id,

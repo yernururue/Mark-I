@@ -1,16 +1,19 @@
-import os
-import json
 import asyncio
 import logging
 import html
+from pydantic import ValidationError
 from google.cloud import pubsub_v1
 from google.cloud import firestore
 
 from app.config import RuntimeRole, Settings, get_settings
+from app.models.github import GitHubEventEnvelope
 from app.services.observation_service import ObservationService
 from app.services.skill_service import SkillService
 from app.services.decision_service import DecisionService
 from app.services.telegram_service import TelegramService
+from app.services.processed_event_service import EventClaimStatus, ProcessedEventService
+from workers.github_extractors import UnsupportedGitHubEvent, extract_github_event
+from workers.github_escalation import calculate_escalation_flags
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,6 +26,7 @@ class WorkerContext:
         self.skill_service = SkillService(db)
         self.decision_service = DecisionService(db)
         self.telegram_service = TelegramService(db, settings)
+        self.processed_event_service = ProcessedEventService(db)
 
 
 def build_context(settings: Settings | None = None) -> WorkerContext:
@@ -31,60 +35,60 @@ def build_context(settings: Settings | None = None) -> WorkerContext:
     db = firestore.Client(project=settings.GCP_PROJECT_ID, database=settings.FIRESTORE_DATABASE)
     return WorkerContext(settings, db)
 
-def get_changes_text(event_type: str, payload: dict) -> str:
-    """Extracts relevant text from payload to feed to Gemini."""
-    text = ""
-    if event_type == "push":
-        commits = payload.get("commits", [])
-        for c in commits:
-            text += f"Commit Message: {c.get('message', '')}\n"
-            text += f"Added: {c.get('added', [])}\n"
-            text += f"Removed: {c.get('removed', [])}\n"
-            text += f"Modified: {c.get('modified', [])}\n\n"
-    elif event_type == "pull_request":
-        pr = payload.get("pull_request", {})
-        text += f"PR Title: {pr.get('title', '')}\n"
-        text += f"PR Body: {pr.get('body', '')}\n"
-    return text
+def decode_github_event_envelope(data: bytes) -> GitHubEventEnvelope:
+    """Validate the publisher's canonical message without key translation."""
+    return GitHubEventEnvelope.model_validate_json(data)
+
 
 async def process_message_async(message: pubsub_v1.subscriber.message.Message, context: WorkerContext):
     """Processes a single Pub/Sub message asynchronously."""
+    envelope = None
+    claim_acquired = False
     try:
-        data = json.loads(message.data.decode("utf-8"))
-        logger.info(f"Processing event: {data.get('event_type')}")
-        
-        uid = data.get("uid")
-        if not uid:
-            logger.warning("No uid found in message. Acknowledging and skipping.")
+        envelope = decode_github_event_envelope(message.data)
+        logger.info("Processing GitHub event %s for delivery %s", envelope.eventType, envelope.deliveryId)
+
+        claim_status = context.processed_event_service.claim(envelope.deliveryId, envelope.uid)
+        if claim_status is EventClaimStatus.COMPLETED:
             message.ack()
             return
+        if claim_status is EventClaimStatus.BUSY:
+            message.nack()
+            return
+        claim_acquired = True
 
-        payload = data.get("payload", {})
-        event_type = data.get("event_type", "unknown")
-        
-        repo_name = payload.get("repository", {}).get("full_name", "unknown/repo")
-        ref = payload.get("ref", "")
-        commit_count = len(payload.get("commits") or []) if event_type == "push" else 1
-        
-        changes_text = get_changes_text(event_type, payload)
+        uid = envelope.uid
+        try:
+            event_context = extract_github_event(envelope)
+        except UnsupportedGitHubEvent:
+            logger.info("Acknowledging unsupported GitHub event %s", envelope.eventType)
+            context.processed_event_service.complete(envelope.deliveryId, envelope.uid)
+            message.ack()
+            return
         
         # Analyze using Gemini
         from ai.analyzers.github_analyzer import analyze_github_event
         observation_data = await analyze_github_event(
-            repo=repo_name,
-            event_type=event_type,
-            ref=ref,
-            commit_count=commit_count,
-            changes_text=changes_text
+            repo=event_context.repo,
+            event_type=event_context.eventType,
+            ref=event_context.ref or "",
+            commit_count=int(event_context.metadata.get("commitCount", 1)),
+            changes_text=event_context.changesText,
         )
         
         if observation_data:
+            user_doc = context.db.collection("users").document(uid).get()
+            if not user_doc.exists:
+                raise LookupError(f"GitHub event user {uid!r} does not exist")
+            user_data = user_doc.to_dict() or {}
+            existing_skills = user_data.get("skills") or {}
+            concept_existed = observation_data.concept in existing_skills
+            previous_score = existing_skills.get(observation_data.concept)
+
             # Create Observation
             metadata = {
-                "repo": repo_name,
-                "event": event_type,
-                "ref": ref,
-                "commitCount": commit_count,
+                **event_context.metadata,
+                "ref": event_context.ref,
             }
             observation = context.observation_service.create_observation(
                 uid=uid,
@@ -93,56 +97,67 @@ async def process_message_async(message: pubsub_v1.subscriber.message.Message, c
                 concept=observation_data.concept,
                 sentiment=observation_data.sentiment,
                 significance_score=observation_data.significanceScore,
-                metadata=metadata
+                metadata=metadata,
+                observation_id=f"github-{envelope.deliveryId}-{uid}",
             )
             
-            # Update Skill
-            # For simplicity, we use the raw significance score as assessment
-            context.skill_service.update_skill(
+            # Proficiency is a skill input; significance belongs only to decisions.
+            updated_score = context.skill_service.update_skill(
                 uid=uid,
                 concept=observation_data.concept,
                 assessment=observation_data.proficiencyAssessment,
-                weight=0.3
+                weight=0.3,
+                processed_event_id=context.processed_event_service.document_id(envelope.deliveryId, uid),
             )
             
-            # Decision Policy
-            user_doc = context.db.collection("users").document(uid).get()
-            if user_doc.exists:
-                user_data = user_doc.to_dict()
-                intensity = user_data.get("intensity", "normal")
-                telegram_user_id = user_data.get("telegramUserId")
-                
-                escalation_flags = []
-                if observation_data.sentiment == "negative":
-                    escalation_flags.append("negative_sentiment")
-                    
-                should_notify, reason = False, ""
-                if observation_data.significanceScore is not None:
-                    should_notify, reason = context.decision_service.evaluate_and_log(
-                        uid=uid,
-                        observation_id=observation.id,
-                        significance=observation_data.significanceScore,
-                        intensity=intensity,
-                        escalation_flags=escalation_flags
-                    )
-                
-                if should_notify and telegram_user_id:
-                    msg = (
-                        f"🤖 <b>Mark-I GitHub Analysis</b>\n\n"
-                        f"<b>Concept:</b> <code>{html.escape(observation_data.concept)}</code>\n"
-                        f"<b>Summary:</b> {html.escape(observation_data.summary)}\n\n"
-                        f"<i>(Reason for ping: {html.escape(reason)})</i>"
-                    )
-                    await context.telegram_service.send_message(telegram_user_id, msg)
+            intensity = user_data.get("intensity", "normal")
+            telegram_user_id = user_data.get("telegramUserId")
+            recent_observations = context.observation_service.get_recent_observations(
+                uid, limit=3, concept=observation_data.concept
+            )
+            escalation_flags = calculate_escalation_flags(
+                concept_existed=concept_existed,
+                previous_score=previous_score,
+                updated_score=updated_score,
+                sentiment=observation_data.sentiment,
+                recent_sentiments=[item.sentiment for item in recent_observations],
+            )
+            should_notify, reason = context.decision_service.evaluate_and_log(
+                uid=uid,
+                observation_id=observation.id,
+                significance=observation_data.significanceScore,
+                intensity=intensity,
+                escalation_flags=escalation_flags,
+                decision_id=f"github-{envelope.deliveryId}-{uid}",
+            )
+
+            if should_notify and telegram_user_id and context.processed_event_service.claim_effect(
+                envelope.deliveryId, uid, "telegramNotification"
+            ):
+                msg = (
+                    f"🤖 <b>Mark-I GitHub Analysis</b>\n\n"
+                    f"<b>Concept:</b> <code>{html.escape(observation_data.concept)}</code>\n"
+                    f"<b>Summary:</b> {html.escape(observation_data.summary)}\n\n"
+                    f"<i>(Reason for ping: {html.escape(reason)})</i>"
+                )
+                await context.telegram_service.send_message(telegram_user_id, msg)
             
             logger.info(f"Successfully processed and updated skill '{observation_data.concept}' for user {uid}")
         
-        # Ack the message
+        context.processed_event_service.complete(envelope.deliveryId, envelope.uid)
         message.ack()
 
-    except Exception as e:
-        logger.error(f"Error processing message: {e}")
-        # Nack the message so it can be retried
+    except ValidationError:
+        logger.warning("Acknowledging invalid GitHub event envelope")
+        message.ack()
+    except Exception as exc:
+        logger.exception("Recoverable error processing GitHub event: %s", type(exc).__name__)
+        if envelope is not None and claim_acquired:
+            context.processed_event_service.release_for_retry(
+                envelope.deliveryId,
+                envelope.uid,
+                type(exc).__name__,
+            )
         message.nack()
 
 def callback(message: pubsub_v1.subscriber.message.Message, context: WorkerContext):

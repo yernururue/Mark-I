@@ -149,6 +149,12 @@ class FakeTransaction:
     def update(self, document: FakeDocument, data: dict[str, Any]) -> None:
         document.update(data)
 
+    def set(self, document: FakeDocument, data: dict[str, Any], merge: bool = False) -> None:
+        if merge:
+            document.update(data)
+            return
+        document.set(data)
+
 
 class FakeFirestore:
     def __init__(self) -> None:
@@ -160,4 +166,3 @@ class FakeFirestore:
 
     def transaction(self) -> FakeTransaction:
         return FakeTransaction()
-

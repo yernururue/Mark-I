@@ -53,7 +53,14 @@ class SkillService:
         result.sort(key=lambda x: x.score, reverse=True)
         return result
 
-    def update_skill(self, uid: str, concept: str, assessment: float, weight: float = 0.3) -> float:
+    def update_skill(
+        self,
+        uid: str,
+        concept: str,
+        assessment: float,
+        weight: float = 0.3,
+        processed_event_id: str | None = None,
+    ) -> float:
         """
         Updates a skill score based on a new assessment (1-10) and returns the new score.
         Formula: new = old * (1 - weight) + assessment * weight
@@ -65,12 +72,23 @@ class SkillService:
         if not math.isfinite(weight) or not 0 <= weight <= 1:
             raise SkillUpdateError("weight must be a finite value from 0 to 1")
         doc_ref = self._collection.document(uid)
+        processed_ref = (
+            self._db.collection("processed_events").document(processed_event_id)
+            if processed_event_id
+            else None
+        )
         
         # We need transaction to ensure atomic read-modify-write
         transaction = self._db.transaction()
         
         @self._transactional_runner
         def update_in_transaction(transaction, doc_ref):
+            if processed_ref is not None:
+                processed_snapshot = processed_ref.get(transaction=transaction)
+                effects = (processed_snapshot.to_dict() or {}).get("effects", {})
+                prior_score = effects.get("skillScore")
+                if prior_score is not None:
+                    return float(prior_score)
             snapshot = doc_ref.get(transaction=transaction)
             if not snapshot.exists:
                 raise UserNotFoundError(f"User {uid!r} does not exist")
@@ -88,6 +106,12 @@ class SkillService:
             # Replacing the map avoids interpreting dots in a user-provided concept
             # as Firestore nested field paths.
             transaction.update(doc_ref, {"skills": {**skills, concept: new_score}})
+            if processed_ref is not None:
+                transaction.set(
+                    processed_ref,
+                    {"effects": {**effects, "skillScore": new_score}},
+                    merge=True,
+                )
             
             return new_score
 

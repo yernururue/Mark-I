@@ -8,10 +8,13 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.api.webhooks.github import receive_github_webhook
+from app.models.github import GitHubEventEnvelope
 from app.services.github_service import GitHubService
 from tests.fakes import FakeFirestore
+from workers.github_worker import decode_github_event_envelope
 
 
 class DummyResponse:
@@ -314,3 +317,90 @@ def test_webhook_publishes_valid_payload_and_delivery_id():
         }
     ]
 
+
+def test_event_envelope_round_trips_without_key_translation():
+    envelope = GitHubEventEnvelope(
+        deliveryId="delivery-1",
+        eventType="push",
+        uid="user-1",
+        repoFullName="Alex/Repo",
+        payload={"repository": {"full_name": "Alex/Repo"}},
+    )
+
+    parsed = GitHubEventEnvelope.model_validate_json(envelope.model_dump_json())
+
+    assert parsed == envelope
+    assert parsed.schemaVersion == 1
+    assert parsed.receivedAt.tzinfo is not None
+
+
+def test_worker_decodes_the_publisher_envelope_without_manual_field_mapping():
+    envelope = GitHubEventEnvelope(
+        deliveryId="delivery-1",
+        eventType="push",
+        uid="user-1",
+        repoFullName="alex/repo",
+        payload={"repository": {"full_name": "alex/repo"}},
+    )
+
+    decoded = decode_github_event_envelope(envelope.model_dump_json().encode("utf-8"))
+
+    assert decoded == envelope
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"uid": ""},
+        {"schemaVersion": 2},
+        {"receivedAt": "2026-08-29T12:00:00"},
+    ],
+)
+def test_event_envelope_rejects_invalid_or_unsupported_contract(changes):
+    data = {
+        "deliveryId": "delivery-1",
+        "eventType": "push",
+        "uid": "user-1",
+        "repoFullName": "alex/repo",
+        "payload": {},
+        "receivedAt": "2026-08-29T12:00:00+00:00",
+    }
+    data.update(changes)
+
+    with pytest.raises(ValidationError):
+        GitHubEventEnvelope.model_validate(data)
+
+
+def test_publish_event_fans_out_one_validated_envelope_per_connected_user():
+    db = FakeFirestore()
+    db.collection("users").document("user-z").set({"connectedRepos": ["other/repo", "Alex/Repo"]})
+    db.collection("users").document("user-a").set({"connectedRepos": ["alex/repo"]})
+    db.collection("users").document("user-other").set({"connectedRepos": ["elsewhere/repo"]})
+    service = make_service(db=db)
+
+    uids = service.publish_event(
+        event_type="push",
+        delivery_id="delivery-1",
+        payload={"repository": {"full_name": "alex/repo"}, "commits": []},
+    )
+
+    assert uids == ["user-a", "user-z"]
+    messages = [GitHubEventEnvelope.model_validate_json(item[1]["data"]) for item in service._pubsub_publisher.published]
+    assert [message.uid for message in messages] == ["user-a", "user-z"]
+    assert all(message.deliveryId == "delivery-1" for message in messages)
+    assert all(message.eventType == "push" for message in messages)
+
+
+def test_publish_event_accepts_unconnected_repository_without_publishing(caplog):
+    service = make_service(db=FakeFirestore())
+
+    assert service.publish_event("push", "delivery-1", {"repository": {"full_name": "alex/repo"}}) == []
+    assert service._pubsub_publisher.published == []
+    assert "unconnected repository" in caplog.text
+
+
+def test_publish_event_rejects_missing_repository_name():
+    with pytest.raises(HTTPException) as exc_info:
+        make_service().publish_event("push", "delivery-1", {"repository": {}})
+
+    assert exc_info.value.status_code == 400

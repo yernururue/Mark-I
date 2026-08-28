@@ -4,7 +4,6 @@ github_service.py — Сервис интеграции с GitHub API, Secret Ma
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
-import json
 import logging
 import uuid
 import urllib.parse
@@ -18,7 +17,7 @@ from google.cloud.firestore_v1.client import Client as FirestoreClient
 import httpx
 
 from app.config import Settings
-from app.models.github import GitHubRepo
+from app.models.github import GitHubEventEnvelope, GitHubRepo
 
 logger = logging.getLogger(__name__)
 
@@ -362,33 +361,75 @@ class GitHubService:
 
     # --- 5. Pub/Sub Publishing ---
 
-    def publish_event(self, event_type: str, delivery_id: str, payload: Dict[str, Any]) -> None:
-        """Публикует обработанное событие в GCP Pub/Sub топик github-events."""
+    @staticmethod
+    def _normalize_repo_full_name(repo_full_name: str) -> str:
+        return repo_full_name.strip().casefold()
+
+    def _find_connected_user_ids(self, repo_full_name: str) -> list[str]:
+        """Return all users monitoring a repository, in deterministic uid order.
+
+        Existing data may have repository names with differing case.  Scanning the
+        user collection is deliberate for the current small MVP and gives exact,
+        case-insensitive semantics until a normalized Firestore index is introduced.
+        """
+        normalized_repo = self._normalize_repo_full_name(repo_full_name)
+        if not normalized_repo:
+            return []
+
+        uids = []
+        for snapshot in self._collection.stream():
+            data = snapshot.to_dict() or {}
+            repos = data.get("connectedRepos") or []
+            if any(
+                isinstance(repo, str)
+                and self._normalize_repo_full_name(repo) == normalized_repo
+                for repo in repos
+            ):
+                uids.append(snapshot.id)
+        return sorted(set(uids))
+
+    def publish_event(self, event_type: str, delivery_id: str, payload: Dict[str, Any]) -> list[str]:
+        """Publish one canonical envelope for every user monitoring the repository."""
         topic_path = self._pubsub_publisher.topic_path(
             self._settings.GCP_PROJECT_ID,
             self._settings.PUBSUB_GITHUB_TOPIC,
         )
 
         repo_full_name = payload.get("repository", {}).get("full_name", "")
-
-        message_data = {
-            "deliveryId": delivery_id,
-            "eventType": event_type,
-            "repoFullName": repo_full_name,
-            "payload": payload,
-            "receivedAt": datetime.now(timezone.utc).isoformat(),
-        }
-
-        data_bytes = json.dumps(message_data).encode("utf-8")
-
-        try:
-            future = self._pubsub_publisher.publish(
-                topic_path,
-                data=data_bytes,
-                eventType=event_type,
-                repoFullName=repo_full_name,
+        if not isinstance(repo_full_name, str) or not repo_full_name.strip():
+            raise HTTPException(
+                status_code=400,
+                detail={"error": {"code": "BAD_REQUEST", "message": "Missing repository full name"}},
             )
-            future.result(timeout=5)
-        except Exception as e:
-            logger.error(f"Failed to publish Pub/Sub message for delivery {delivery_id}: {e}")
-            raise HTTPException(status_code=500, detail="Ошибка публикации события")
+
+        uids = self._find_connected_user_ids(repo_full_name)
+        if not uids:
+            logger.warning(
+                "Ignoring GitHub delivery for an unconnected repository",
+                extra={"delivery_id": delivery_id, "repo_full_name": repo_full_name},
+            )
+            return []
+
+        for uid in uids:
+            envelope = GitHubEventEnvelope(
+                deliveryId=delivery_id,
+                eventType=event_type,
+                uid=uid,
+                repoFullName=repo_full_name,
+                payload=payload,
+            )
+            try:
+                future = self._pubsub_publisher.publish(
+                    topic_path,
+                    data=envelope.model_dump_json().encode("utf-8"),
+                    schemaVersion=str(envelope.schemaVersion),
+                    eventType=envelope.eventType,
+                    repoFullName=envelope.repoFullName,
+                    uid=envelope.uid,
+                    deliveryId=envelope.deliveryId,
+                )
+                future.result(timeout=5)
+            except Exception as exc:
+                logger.error("Failed to publish GitHub delivery %s for uid %s", delivery_id, uid)
+                raise HTTPException(status_code=500, detail="Ошибка публикации события") from exc
+        return uids

@@ -33,6 +33,7 @@ class DecisionService:
         significance: int,
         intensity: str,
         escalation_flags: List[str],
+        decision_id: str | None = None,
     ) -> tuple[bool, str]:
         """
         Evaluates whether a notification should be sent based on intensity and significance,
@@ -58,7 +59,7 @@ class DecisionService:
         # 2. Log to Firestore
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(days=30)
-        decision_id = f"dec-{uuid.uuid4().hex[:12]}"
+        decision_id = decision_id or f"dec-{uuid.uuid4().hex[:12]}"
         
         doc_data = {
             "id": decision_id,
