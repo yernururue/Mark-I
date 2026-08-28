@@ -4,11 +4,6 @@ import asyncio
 
 import pytest
 
-import app.config as config_module
-
-# Temporary test seam: the missing production accessor has its own strict xfail regression.
-config_module.get_settings = lambda: config_module.settings
-
 from app.models.user import CreateProfileRequest  # noqa: E402
 from app.services import chat_service as chat_module  # noqa: E402
 from app.services.user_service import UserService  # noqa: E402
@@ -128,4 +123,3 @@ def test_agent_failure_fallback_is_stored(monkeypatch):
     assert "trouble processing" in response
     saved = db.collection("users").document("user-1").collection("messages").get()
     assert saved[-1].to_dict()["text"] == response
-

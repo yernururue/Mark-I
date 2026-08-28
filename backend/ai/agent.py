@@ -1,22 +1,21 @@
 import pydantic
-from google.antigravity import LocalAgentConfig
+from google.adk.agents import LlmAgent
 
-from backend.app.config import get_settings
-
-settings = get_settings()
+from app.config import Settings, get_settings
 
 class GithubObservationSchema(pydantic.BaseModel):
     summary: str
     concept: str
     sentiment: str
-    significanceScore: int
+    proficiencyAssessment: float = pydantic.Field(ge=0, le=10)
+    significanceScore: int = pydantic.Field(ge=1, le=10)
 
-def get_github_analyzer_config(system_instruction: str) -> LocalAgentConfig:
+def get_github_analyzer_config(system_instruction: str, settings: Settings | None = None) -> LlmAgent:
     """Returns ADK Agent config for GitHub Analysis."""
-    return LocalAgentConfig(
-        system_instruction=system_instruction,
-        response_schema=GithubObservationSchema,
-        model_name=settings.GEMINI_MODEL,
-        # Defaulting to no-auth or ADC if vertex isn't fully configured, 
-        # assuming GOOGLE_API_KEY or ADC is in the env as per requirements
+    settings = settings or get_settings()
+    return LlmAgent(
+        name="github_observation_analyzer",
+        model=settings.GEMINI_MODEL,
+        instruction=system_instruction,
+        output_schema=GithubObservationSchema,
     )

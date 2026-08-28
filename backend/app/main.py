@@ -19,13 +19,16 @@ from app.api.v1.router import api_v1_router
 from app.api.webhooks.github import router as github_webhook_router
 from app.api.webhooks.telegram import router as telegram_webhook_router
 from telegrambot.bot import setup_webhook
-from app.config import settings
+from app.config import RuntimeRole, get_settings
 from app.models.common import HealthResponse
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    await setup_webhook()
+    settings = get_settings()
+    if settings.ENV == "production":
+        settings.validate_for_role(RuntimeRole.API)
+    await setup_webhook(settings)
     yield
     # Shutdown
     await close_httpx_client()
@@ -43,7 +46,6 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        settings.FRONTEND_URL,      # Берет адрес фронтенда из .env файла
         "http://localhost:3000",    # На всякий случай разрешаем стандартный локальный порт
     ],
     allow_credentials=True,         # Разрешает фронтенду присылать авторизационные токены

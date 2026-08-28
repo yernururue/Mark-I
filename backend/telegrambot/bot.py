@@ -1,18 +1,19 @@
-import os
 import httpx
 import logging
 
+from app.config import Settings
+
 logger = logging.getLogger(__name__)
 
-async def setup_webhook():
+async def setup_webhook(settings: Settings):
     """
     Called on startup to register the webhook URL with Telegram.
     For this to work, BACKEND_URL or something similar must be defined.
     If it's local dev, you might skip this or use ngrok.
     """
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    webhook_url = os.environ.get("TELEGRAM_WEBHOOK_URL")
-    secret_token = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
+    bot_token = settings.TELEGRAM_BOT_TOKEN
+    webhook_url = settings.TELEGRAM_WEBHOOK_URL
+    secret_token = settings.TELEGRAM_WEBHOOK_SECRET
     
     if not bot_token or not webhook_url:
         logger.warning("TELEGRAM_BOT_TOKEN or TELEGRAM_WEBHOOK_URL missing, skipping webhook setup.")

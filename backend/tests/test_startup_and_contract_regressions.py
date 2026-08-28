@@ -7,6 +7,7 @@ import sys
 
 import pytest
 
+from app.config import ConfigurationError, RuntimeRole, Settings, get_settings, reset_settings_cache
 from app.models.chat import ChatRequest, ChatResponse
 from app.models.dashboard import DashboardStats
 from app.models.decision import Decision
@@ -27,43 +28,60 @@ def run_python(code: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="config.py exports settings but not get_settings.")
 def test_config_exports_get_settings():
     result = run_python("from app.config import get_settings; assert get_settings()")
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="Six routers import aliases that app.dependencies does not define.")
+def test_settings_are_lazy_cached_and_role_validation_is_sanitised(monkeypatch):
+    for name in ("GCP_PROJECT_ID", "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "GITHUB_WEBHOOK_SECRET"):
+        monkeypatch.delenv(name, raising=False)
+    reset_settings_cache()
+    cached = get_settings()
+    assert cached is get_settings()
+    first = Settings(
+        _env_file=None,
+        GCP_PROJECT_ID=None,
+        GITHUB_CLIENT_ID=None,
+        GITHUB_CLIENT_SECRET=None,
+        GITHUB_WEBHOOK_SECRET=None,
+    )
+    with pytest.raises(ConfigurationError, match="GCP_PROJECT_ID") as error:
+        first.validate_for_role(RuntimeRole.API)
+    assert "known-test-secret" not in str(error.value)
+    reset_settings_cache()
+
+
+def test_explicit_settings_do_not_read_dotenv_or_real_environment():
+    settings = Settings(_env_file=None, GCP_PROJECT_ID="unit-project")
+    assert settings.GCP_PROJECT_ID == "unit-project"
+
+
 def test_dependencies_export_router_contract():
     result = run_python("from app.dependencies import get_db, get_current_user_id")
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="github.py references undefined _get_github_service while declaring routes.")
 def test_github_router_imports():
     result = run_python("import app.api.v1.github")
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="The FastAPI application cannot currently complete its import graph.")
 def test_fastapi_application_import_smoke():
     result = run_python("from app.main import app; assert app.title == 'Mark-I API'")
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="AI modules import google.antigravity, which is absent from requirements and google-adk.")
 def test_github_analyzer_imports_supported_adk_api():
     result = run_python("import ai.analyzers.github_analyzer")
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="Workers import backend.* although the Docker workdir exposes app/ and ai/ as top-level packages.")
 def test_worker_imports_in_docker_layout():
     result = run_python("import workers.github_worker; import workers.opportunity_worker")
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="Current google-cloud-firestore requires FieldFilter; tuple values passed via filter= raise ValueError.")
 def test_firestore_queries_use_supported_filter_objects():
     sources = "\n".join(
         BACKEND_ROOT.joinpath(path).read_text()

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from google.cloud.firestore_v1.client import Client as FirestoreClient
+from google.cloud import firestore
 
 from app.services.decision_service import DecisionService
 from app.services.observation_service import ObservationService
@@ -61,7 +61,7 @@ def test_decision_policy_pict_matrix(significance, intensity, flags, expected):
 def test_skill_weighted_average_pict_cases(current, assessment, expected):
     db = FakeFirestore()
     db.collection("users").document("user-1").set({"skills": {"testing": current}})
-    service = SkillService(db)
+    service = SkillService(db, transactional_runner=lambda function: function)
 
     result = service.update_skill("user-1", "testing", assessment)
 
@@ -69,12 +69,8 @@ def test_skill_weighted_average_pict_cases(current, assessment, expected):
     assert db.collection("users").document("user-1").get().to_dict()["skills"]["testing"] == expected
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="SkillService uses db.transactional, but the production Firestore Client exposes firestore.transactional instead.",
-)
 def test_skill_service_uses_supported_firestore_transaction_api():
-    assert hasattr(FirestoreClient, "transactional")
+    assert callable(firestore.transactional)
 
 
 def test_skills_are_sorted_descending_for_dashboard():
@@ -138,4 +134,3 @@ def test_observations_support_source_filter_from_api_contract():
     db = FakeFirestore()
     service = ObservationService(db)
     service.get_recent_observations("user-1", source="github")
-
