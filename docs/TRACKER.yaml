@@ -8,9 +8,9 @@ areas:
     notes: "Plan created 2026-08-21, 7 tasks (01-06 completed, 07 pending)"
 
   frontend:
-    status: in-progress
+    status: done
     current_plan: frontend-mvp
-    notes: "Plan created 2026-08-23, 6 tasks, started"
+    notes: "Plan created 2026-08-23, all tasks completed. Ready for integration."
 
 integration:
   status: planned
@@ -22,5 +22,5 @@ plans:
     created: 2026-08-21
   - name: frontend-mvp
     area: frontend
-    status: in-progress
+    status: shipped
     created: 2026-08-23

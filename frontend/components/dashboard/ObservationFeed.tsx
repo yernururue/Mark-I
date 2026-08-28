@@ -33,7 +33,7 @@ export default function ObservationFeed({ observations }: ObservationFeedProps) 
   if (observations.length === 0) {
     return (
       <div className="h-full flex flex-col">
-        <h3 className="text-lg font-serif italic mb-4 text-white/80">Activity Feed</h3>
+        <h3 className="text-lg font-medium tracking-tight mb-4 text-white/90">Activity Feed</h3>
         <div className="flex-1 flex items-center justify-center border border-white/5 bg-white/[0.02] rounded-md p-6">
           <p className="text-white/40 text-sm font-sans">No activity recorded yet.</p>
         </div>
@@ -43,7 +43,7 @@ export default function ObservationFeed({ observations }: ObservationFeedProps) 
 
   return (
     <div className="h-full flex flex-col">
-      <h3 className="text-lg font-serif italic mb-4 text-white/80">Activity Feed</h3>
+      <h3 className="text-lg font-medium tracking-tight mb-4 text-white/90">Activity Feed</h3>
       <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
         {observations.map((obs) => (
           <div key={obs.id} className="p-4 border border-white/10 bg-white/5 rounded-md hover:bg-white/10 transition-colors">

@@ -3,9 +3,10 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Search, Plus, Mic, Monitor, Cloud, Droplet, Plug, Bot, Zap, Cpu, Sparkles, Code, Layout, Database } from "lucide-react";
+import { Search, Plus, Mic, Monitor, Cloud, Droplet, Plug, Bot, Zap, Cpu, Sparkles, Code, Layout, Database, Settings } from "lucide-react";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import CreateAgentModal from "@/components/dashboard/CreateAgentModal";
+import SettingsModal from "@/components/dashboard/SettingsModal";
 
 const IconMap: Record<string, any> = {
   bot: Bot,
@@ -31,10 +32,11 @@ function formatTime(isoString: string) {
 export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const { agents, loading: dataLoading } = useDashboardData(user?.uid);
+  const { agents, profile, observations, decisions, loading: dataLoading } = useDashboardData(user?.uid);
   
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -170,9 +172,18 @@ export default function Dashboard() {
               <div className="w-24 h-4 bg-white/5 rounded-full"></div>
             </div>
           )}
-          <button className="p-2 rounded-full hover:bg-white/5 transition-colors">
-            <Monitor className="w-4 h-4 text-white/40" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button className="p-2 rounded-full hover:bg-white/5 transition-colors">
+              <Monitor className="w-4 h-4 text-white/40" />
+            </button>
+            <button 
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-2 rounded-full hover:bg-white/5 transition-colors"
+              title="Dashboard Settings & Analytics"
+            >
+              <Settings className="w-4 h-4 text-white/40" />
+            </button>
+          </div>
         </header>
 
         {/* Messages Area */}
@@ -223,6 +234,13 @@ export default function Dashboard() {
       <CreateAgentModal 
         isOpen={isCreateModalOpen} 
         onClose={() => setIsCreateModalOpen(false)} 
+      />
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        profile={profile}
+        observations={observations}
+        decisions={decisions}
       />
     </div>
   );

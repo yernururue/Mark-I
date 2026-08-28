@@ -10,7 +10,7 @@ export default function DecisionLog({ decisions }: DecisionLogProps) {
     return (
       <div className="h-full flex flex-col">
         <div className="flex items-center gap-2 mb-4">
-          <h3 className="text-lg font-serif italic text-white/80">Decision Engine</h3>
+          <h3 className="text-lg font-medium tracking-tight text-white/90">Decision Engine</h3>
           <Info className="w-4 h-4 text-white/40" />
         </div>
         <div className="flex-1 flex items-center justify-center border border-white/5 bg-white/[0.02] rounded-md p-6">
@@ -25,7 +25,7 @@ export default function DecisionLog({ decisions }: DecisionLogProps) {
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center gap-2 mb-4">
-        <h3 className="text-lg font-serif italic text-white/80">Decision Engine</h3>
+        <h3 className="text-lg font-medium tracking-tight text-white/90">Decision Engine</h3>
         <span title="Shows why the AI mentor decided to contact you or stay silent." className="cursor-help">
           <Info className="w-4 h-4 text-white/40" />
         </span>

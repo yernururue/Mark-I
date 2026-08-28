@@ -24,7 +24,7 @@ export default function SkillRadar({ skills }: SkillRadarProps) {
 
   return (
     <div className="h-full w-full">
-      <h3 className="text-lg font-serif italic mb-4 text-white/80">Skill Profile</h3>
+      <h3 className="text-lg font-medium tracking-tight mb-4 text-white/90">Skill Profile</h3>
       <div className="h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart cx="50%" cy="50%" outerRadius="80%" data={data}>
