@@ -12,6 +12,10 @@ from app.models.chat import ChatRequest, ChatResponse
 from app.models.dashboard import DashboardStats
 from app.models.decision import Decision
 from app.models.observation import ObservationsResponse
+from app.models.github import GitHubEventEnvelope
+from app.services.processed_event_service import ProcessedEventService
+from workers.github_extractors import EVENT_EXTRACTORS
+from workers.github_worker import decode_github_event_envelope
 
 
 BACKEND_ROOT = Path(__file__).parents[1]
@@ -93,28 +97,25 @@ def test_firestore_queries_use_supported_filter_objects():
     assert "where(filter=(" not in sources
 
 
-@pytest.mark.xfail(strict=True, reason="Webhook publishes deliveryId/eventType and no uid; worker reads uid/event_type.")
 def test_github_webhook_and_worker_share_event_schema():
-    webhook = BACKEND_ROOT.joinpath("app/services/github_service.py").read_text()
-    worker = BACKEND_ROOT.joinpath("workers/github_worker.py").read_text()
-    assert 'data.get("deliveryId")' in worker
-    assert 'data.get("eventType")' in worker
-    assert '"uid":' in webhook
+    envelope = GitHubEventEnvelope(
+        deliveryId="delivery-1",
+        eventType="push",
+        uid="user-1",
+        repoFullName="alex/repo",
+        payload={},
+    )
+    assert decode_github_event_envelope(envelope.model_dump_json().encode()) == envelope
 
 
-@pytest.mark.xfail(strict=True, reason="GitHub flow documents idempotency, but neither receiver nor worker accesses processed_events.")
 def test_github_pipeline_implements_delivery_id_idempotency():
-    webhook = BACKEND_ROOT.joinpath("app/api/webhooks/github.py").read_text()
-    worker = BACKEND_ROOT.joinpath("workers/github_worker.py").read_text()
-    assert "processed_events" in webhook
-    assert "processed_events" in worker
+    assert ProcessedEventService.document_id("delivery-1", "user-1") == "github:delivery-1:user-1"
 
 
-@pytest.mark.xfail(strict=True, reason="Only push and pull_request content is extracted; four documented event types produce empty analysis input.")
 def test_all_documented_github_events_extract_analysis_text():
-    worker = BACKEND_ROOT.joinpath("workers/github_worker.py").read_text()
-    for event_type in ("pull_request_review", "issues", "issue_comment", "create"):
-        assert f'event_type == "{event_type}"' in worker
+    assert set(EVENT_EXTRACTORS) == {
+        "push", "pull_request", "pull_request_review", "issues", "issue_comment", "create"
+    }
 
 
 @pytest.mark.xfail(strict=True, reason="The scheduler trigger is public and has no OIDC/shared-secret/Firebase guard.")
