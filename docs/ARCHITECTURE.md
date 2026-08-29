@@ -304,15 +304,15 @@ Each run is isolated by `uid`, `agentId`, and `runId`. Agents share work only th
 
 | Area | Details |
 |------|---------|
-| **UI/UX** | All visual components, layouts, styling |
+| **UI/UX** | Preserve the approved frontend and make only correctness or backend-connection changes behind it |
 | **Firebase Auth (client)** | Sign-in flow, token management, provider setup |
 | **Routing** | `/`, `/login`, `/onboarding`, `/dashboard`, `/agents`, `/runs/[runId]`, `/chat`, `/settings` |
-| **Dashboard** | Agent roster, concurrent run states, artifacts, skills, observations, decision log |
+| **Dashboard** | Preserve the existing shell, agent roster, chat canvas, navigation, layout, and styling; connect current controls to backend data |
 | **Chat Widget** | Chat UI, message display, input handling |
 | **Settings UI** | Profile form, integration toggles, link code display |
 | **Firestore Listeners** | Realtime subscriptions for user data |
 | **GitHub OAuth Redirect** | Initiate OAuth flow, handle callback redirect |
-| **Responsive Design** | Mobile/tablet/desktop layouts |
+| **Responsive Behavior** | Preserve and validate the current mobile/tablet/desktop behavior without redesigning it |
 
 ### Backend Owns
 

@@ -1,15 +1,9 @@
 import { fetchApi } from "@/lib/api";
 import { appConfig } from "@/lib/config";
+import { AppError } from "@/lib/errors";
 import { createId } from "@/lib/id";
 import type { Agent, AgentRun, Conversation, Message, SendMessageInput } from "@/types/models";
 import { getLocalAgents, getLocalConversations, getLocalMessages, getLocalRuns, saveLocalConversations, saveLocalMessages, saveLocalRuns } from "./adapters/local-store";
-
-interface ApiChatResponse {
-  agentId: string;
-  runId: string;
-  response: string;
-  agentMessageId: string;
-}
 
 interface ApiMessagesResponse {
   messages: Array<{
@@ -38,34 +32,39 @@ function upsertConversation(uid: string, conversation: Conversation): void {
   saveLocalConversations(uid, [conversation, ...current.filter((item) => item.id !== conversation.id)]);
 }
 
-export const chatService = {
-  async getConversations(uid: string, agentIds: string[]): Promise<Conversation[]> {
-    if (appConfig.dataMode !== "local") {
-      return [{ id: "workspace-chat", agentIds, title: "Workspace chat", updatedAt: new Date().toISOString() }];
-    }
-    const conversations = getLocalConversations(uid);
-    if (conversations.length > 0) return conversations;
-    const primary: Conversation = {
-      id: "workspace-chat",
-      agentIds,
-      title: "Workspace chat",
-      updatedAt: new Date().toISOString(),
-    };
-    saveLocalConversations(uid, [primary]);
-    return [primary];
-  },
+function getOrCreateLocalConversation(uid: string, agentId: string): Conversation {
+  const existing = getLocalConversations(uid).find(
+    (conversation) => conversation.agentId === agentId,
+  );
+  if (existing) return existing;
 
-  async updateRecipients(uid: string, conversationId: string, agentIds: string[]): Promise<Conversation> {
-    const existing = (await this.getConversations(uid, agentIds)).find((item) => item.id === conversationId);
-    const conversation: Conversation = {
-      id: conversationId,
-      title: agentIds.length > 1 ? "Agent group" : "Agent chat",
-      updatedAt: new Date().toISOString(),
-      ...existing,
-      agentIds,
-    };
-    if (appConfig.dataMode === "local") upsertConversation(uid, conversation);
-    return conversation;
+  const conversation: Conversation = {
+    id: `agent-conversation-${agentId}`,
+    agentId,
+    title: "Agent chat",
+    updatedAt: new Date().toISOString(),
+  };
+  upsertConversation(uid, conversation);
+  return conversation;
+}
+
+function unavailableRemoteConversation(): never {
+  throw new AppError(
+    "Agent-specific conversations require the backend conversation endpoints before remote chat can be used.",
+    "backend-contract",
+  );
+}
+
+export const chatService = {
+  async getOrCreateConversation(
+    uid: string,
+    agentId: string,
+  ): Promise<Conversation> {
+    if (appConfig.dataMode === "local") {
+      return getOrCreateLocalConversation(uid, agentId);
+    }
+
+    return unavailableRemoteConversation();
   },
 
   async getMessages(uid: string, conversationId: string): Promise<Message[]> {
@@ -84,30 +83,15 @@ export const chatService = {
   },
 
   async sendMessage(uid: string, input: SendMessageInput): Promise<Message[]> {
-    if (appConfig.dataMode !== "local") {
-      const response = await fetchApi<ApiChatResponse>("/chat", {
-        method: "POST",
-        body: JSON.stringify({ agentIds: input.agentIds, message: input.message, channel: "web" }),
-      });
-      return [{
-        id: response.agentMessageId,
-        conversationId: input.conversationId,
-        agentId: response.agentId,
-        runId: response.runId,
-        role: "agent",
-        content: response.response,
-        createdAt: new Date().toISOString(),
-        status: "sent",
-      }];
-    }
+    if (appConfig.dataMode !== "local") return unavailableRemoteConversation();
 
-    const agents = getLocalAgents(uid).filter((agent) => input.agentIds.includes(agent.id));
-    if (agents.length === 0) throw new Error("Select at least one active agent.");
+    const agent = getLocalAgents(uid).find((item) => item.id === input.agentId);
+    if (!agent) throw new Error("The selected agent is not available.");
     const existing = getLocalMessages(uid, input.conversationId);
     const userMessage: Message = {
       id: input.clientMessageId,
       conversationId: input.conversationId,
-      agentId: input.agentIds.length === 1 ? input.agentIds[0] : undefined,
+      agentId: input.agentId,
       role: "user",
       content: input.message,
       createdAt: new Date().toISOString(),
@@ -118,39 +102,36 @@ export const chatService = {
     await new Promise((resolve) => window.setTimeout(resolve, 650));
 
     const timestamp = new Date().toISOString();
-    const responsePairs = agents.map((agent) => {
-      const runId = createId("run-chat");
-      const response: Message = {
-        id: createId("message"),
-        conversationId: input.conversationId,
-        agentId: agent.id,
-        runId,
-        role: "agent",
-        content: localAgentReply(agent, input.message),
-        createdAt: timestamp,
-        status: "sent",
-      };
-      const run: AgentRun = {
-        id: runId,
-        agentId: agent.id,
-        assignment: `Chat: ${input.message}`,
-        status: "completed",
-        progress: "Response delivered in workspace chat",
-        artifactIds: [],
-        createdAt: timestamp,
-        startedAt: timestamp,
-        finishedAt: timestamp,
-      };
-      return { response, run };
-    });
-    const responses = responsePairs.map((pair) => pair.response);
-    saveLocalRuns(uid, [...responsePairs.map((pair) => pair.run), ...getLocalRuns(uid)]);
+    const runId = createId("run-chat");
+    const response: Message = {
+      id: createId("message"),
+      conversationId: input.conversationId,
+      agentId: agent.id,
+      runId,
+      role: "agent",
+      content: localAgentReply(agent, input.message),
+      createdAt: timestamp,
+      status: "sent",
+    };
+    const run: AgentRun = {
+      id: runId,
+      agentId: agent.id,
+      assignment: `Chat: ${input.message}`,
+      status: "completed",
+      progress: "Response delivered in agent chat",
+      artifactIds: [],
+      createdAt: timestamp,
+      startedAt: timestamp,
+      finishedAt: timestamp,
+    };
+    saveLocalRuns(uid, [run, ...getLocalRuns(uid)]);
+    const responses = [response];
     saveLocalMessages(uid, input.conversationId, [...withoutDuplicate, userMessage, ...responses]);
     upsertConversation(uid, {
       id: input.conversationId,
-      agentIds: input.agentIds,
+      agentId: input.agentId,
       title: input.message.slice(0, 48),
-      updatedAt: responses.at(-1)?.createdAt ?? userMessage.createdAt,
+      updatedAt: response.createdAt,
     });
     return responses;
   },

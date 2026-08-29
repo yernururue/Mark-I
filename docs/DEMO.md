@@ -35,7 +35,7 @@ The demo must prove:
 
 **Step 1: Sign In**
 - Show Google sign-in on the website
-- Dashboard appears (empty state)
+- The existing dashboard appears in its current form
 
 **Step 2: Set Workspace Goal**
 - Set goal: "Take my product from concept to launch"
@@ -84,8 +84,8 @@ The demo must prove:
 - Show the webhook entering the event router and being assigned to the mentor agent
 
 **Step 9: Analysis and Decision Policy**
-- Dashboard shows a skill update and observation owned by the mentor agent
-- Show the decision log on dashboard: "Notified: significance 7 >= threshold 5 (normal intensity)"
+- Ask the mentor agent about the latest GitHub activity in the existing chat
+- The agent explains the skill update, observation, and notification reason in that conversation
 - Narrate: "The mentor agent judges significance, while deterministic policy decides whether notification is allowed."
 
 **Step 10: Telegram Notification**
@@ -137,7 +137,7 @@ These MUST be visible in the demo to score well on "Technical Execution":
 | **Cloud Run** | Deployment dashboard, running service, logs | Act 3 + Act 6 |
 | **Vertex AI / Gemini** | API call in logs, mention ADK | Act 3 |
 | **Cloud Pub/Sub** | Topic/message in Cloud Console | Act 3 (briefly) |
-| **Cloud Firestore** | Data in Console (optional, dashboard shows data) | Optional |
+| **Cloud Firestore** | Data in Console for optional backend verification | Optional |
 | **Cloud Scheduler** | Cron job in Console | Act 6 (architecture) |
 | **Secret Manager** | Mention in architecture | Act 6 |
 
@@ -149,7 +149,7 @@ These MUST be visible in the demo to score well on "Technical Execution":
 |-------|--------|--------|
 | Post on X/LinkedIn with #AllThingsAgenticHackathon | +0.2 | Low |
 | Blog post about the experience | +0.2 | Medium |
-| Include before/after demo (empty → populated dashboard) | — | In demo |
+| Show the first agent appearing in the existing dashboard roster | — | In demo |
 | Show agent explaining a past decision in chat | — | In demo |
 
 ---

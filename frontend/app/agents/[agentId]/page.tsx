@@ -10,7 +10,7 @@ import AgentStatusBadge from "@/components/agents/AgentStatusBadge";
 import DashboardShell from "@/components/dashboard/DashboardShell";
 import SettingsScaffold from "@/components/settings/SettingsScaffold";
 import { useAuth } from "@/contexts/AuthContext";
-import { useDashboardData } from "@/hooks/useDashboardData";
+import { useAgentRoster } from "@/hooks/useAgentRoster";
 import { getErrorMessage } from "@/lib/errors";
 import { agentsService } from "@/services/agents";
 import type { CreateAgentInput } from "@/types/models";
@@ -25,7 +25,7 @@ function AgentSettingsContent() {
   const params = useParams<{ agentId: string }>();
   const router = useRouter();
   const { user } = useAuth();
-  const { agents, loading, error, retry } = useDashboardData(user?.uid);
+  const { agents, loading, error, retry } = useAgentRoster(user?.uid);
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -123,4 +123,3 @@ function AgentSettingsContent() {
 export default function AgentSettingsPage() {
   return <RouteGuard><AgentSettingsContent /></RouteGuard>;
 }
-

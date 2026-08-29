@@ -10,7 +10,7 @@ areas:
   frontend:
     status: in-progress
     current_plan: frontend-product-readiness
-    notes: "Frontend architecture and product-flow stabilization started 2026-08-29 after audit found incomplete MVP flows."
+    notes: "Frontend review completed 2026-08-29 for Multiple Customizable Agents. Dashboard UI is frozen; next work is dead-code cleanup, repository hygiene, validated agent models, atomic onboarding, isolated conversations, and backend integration behind the current interface."
 
 integration:
   status: planned

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Plus, RotateCcw, Send, Settings } from "lucide-react";
 import RouteState from "@/components/RouteState";
@@ -18,8 +18,9 @@ const SUGGESTED_PROMPTS = [
 ];
 
 export default function ChatPanel({ uid }: ChatPanelProps) {
-  const { agents, selectedAgentIds, messages, loading, sending, error, selectAgents, sendMessage, retryMessage, retryLoad } = useChat(uid);
+  const { agents, selectedAgentId, messages, loading, sending, error, selectAgent, sendMessage, retryMessage, retryLoad } = useChat(uid);
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -29,15 +30,15 @@ export default function ChatPanel({ uid }: ChatPanelProps) {
 
   useEffect(() => {
     const requestedAgentId = searchParams.get("agent");
-    if (requestedAgentId && agents.some((agent) => agent.id === requestedAgentId) && !selectedAgentIds.includes(requestedAgentId)) {
-      void selectAgents([requestedAgentId]);
+    if (requestedAgentId && agents.some((agent) => agent.id === requestedAgentId) && selectedAgentId !== requestedAgentId) {
+      void selectAgent(requestedAgentId);
     }
-  }, [agents, searchParams, selectAgents, selectedAgentIds]);
+  }, [agents, searchParams, selectAgent, selectedAgentId]);
 
   if (loading) return <RouteState title="Loading agents" />;
   if (error && agents.length === 0) return <RouteState title="Chat unavailable" message={error} onRetry={retryLoad} />;
 
-  const selectedAgent = agents.find((agent) => selectedAgentIds.includes(agent.id)) ?? agents[0];
+  const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? agents[0];
   const canSend = selectedAgent?.status === "active";
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
@@ -55,7 +56,11 @@ export default function ChatPanel({ uid }: ChatPanelProps) {
   const agentName = (agentId?: string) => agents.find((agent) => agent.id === agentId)?.name ?? "Agent";
 
   return (
-    <DashboardShell agents={agents} selectedAgentId={selectedAgent?.id} onSelectAgent={(agentId) => void selectAgents([agentId])}>
+    <DashboardShell
+      agents={agents}
+      selectedAgentId={selectedAgent?.id}
+      onSelectAgent={(agentId) => router.replace(`/dashboard?agent=${encodeURIComponent(agentId)}`)}
+    >
       <div className="chat-panel">
         <header className="chat-header">
           <div className="agent-name-with-status">
@@ -122,7 +127,7 @@ export default function ChatPanel({ uid }: ChatPanelProps) {
             {error && messages.length > 0 ? <p className="chat-composer__error" role="alert">{error}</p> : null}
             <div className="chat-composer__field">
               <textarea rows={1} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={canSend ? `Message ${selectedAgent?.name ?? "agent"}` : `${selectedAgent?.name ?? "Agent"} is paused`} aria-label="Message agent" disabled={sending || !canSend} maxLength={2000} />
-              <button type="submit" className="chat-send" disabled={!draft.trim() || sending || !canSend || selectedAgentIds.length === 0} aria-label="Send message">
+              <button type="submit" className="chat-send" disabled={!draft.trim() || sending || !canSend || !selectedAgentId} aria-label="Send message">
                 <Send size={18} />
               </button>
             </div>

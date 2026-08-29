@@ -1,6 +1,6 @@
 # Mark-I — Technical Requirements Document
 
-> **Status:** Draft v1.1  
+> **Status:** Draft v1.2
 > **Last updated:** 2026-08-29  
 > **Authors:** Yernur (backend/agent), Vlad (frontend)
 
@@ -8,11 +8,13 @@
 
 ## 1. System Overview
 
-Mark-I is a cloud-native, configurable multi-agent workspace. A user can create multiple specialized AI agents and run them concurrently with isolated configuration, scoped context, and traceable collaboration. Developer mentoring is the first agent template and GitHub remains the first deep activity integration.
+Mark-I is a cloud-native workspace for **Multiple Customizable Agents**. A user can create several specialized agents, switch between isolated conversations, customize each agent's identity and behavior, and run work with scoped context and traceable ownership. Developer mentoring is the first agent template and GitHub remains the first deep activity integration.
+
+The product, frontend, backend, persistence layer, and runtime all use **agent** as the single domain term, with stable identifiers such as `agentId`.
 
 The platform consists of:
 
-- **Frontend** — Next.js web app hosted on Firebase Hosting
+- **Frontend** — Next.js web app on a Next-compatible Firebase/Google runtime
 - **Backend** — FastAPI service running on Cloud Run
 - **Agent Runtime** — Google ADK + Gemini instances created from stored agent configurations
 - **Run Orchestrator** — routes assignments, schedules concurrent runs, enforces limits, and records state
@@ -23,14 +25,14 @@ The platform consists of:
 
 ## 2. Architecture Summary
 
-This is the directional target architecture. Existing single-mentor components should be migrated behind the agent runtime rather than duplicated as a separate product path.
+This is the directional target architecture. The existing frontend dashboard is visually frozen: its shell, roster, chat canvas, layout, styles, navigation, and component arrangement remain in place. Changes occur behind that interface in services, state, validation, and backend adapters.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        FRONTEND                              │
-│  Next.js + Firebase Auth + Firebase Hosting                  │
+│  Next.js + Firebase Auth + Next-compatible hosting           │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
-│  │Workspace │ │ Agents   │ │  Chat    │ │Onboarding│       │
+│  │Dashboard │ │ Agents   │ │  Chat    │ │Onboarding│       │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
 │         │            │            │            │             │
 │         └────────────┴────────────┴────────────┘             │
@@ -86,14 +88,16 @@ This is the directional target architecture. Existing single-mentor components s
 
 | Component | Technology |
 |-----------|-----------|
-| Framework | Next.js 14+ (App Router) |
-| Language | TypeScript |
+| Framework | Next.js 16 (App Router) |
+| UI runtime | React 19 |
+| Language | TypeScript (strict) |
 | Auth | Firebase Auth (client SDK) |
-| Hosting | Firebase Hosting |
 | Realtime | Firestore client SDK (onSnapshot) |
-| HTTP | Fetch API / Axios for backend REST calls |
-| Styling | TBD (CSS Modules / Tailwind / Chakra) |
-| Charts | TBD (Recharts / Chart.js / D3) |
+| HTTP | Typed wrapper around Fetch API |
+| Styling | Global CSS with Tailwind 4 build processing |
+| Icons | Lucide React |
+| Development data | Explicit localStorage adapter and simulators |
+| Hosting | Next-compatible runtime; final Firebase deployment mode must be confirmed |
 
 ### 3.2 Pages & Routes
 
@@ -101,14 +105,16 @@ This is the directional target architecture. Existing single-mentor components s
 |-------|---------|---------------|
 | `/` | Landing / redirect to dashboard | No |
 | `/login` | Sign-in page | No |
-| `/onboarding` | First-time setup wizard | Yes |
-| `/dashboard` | Workspace overview with agent roster, runs, outputs, and decisions | Yes |
+| `/onboarding` | Workspace defaults and first-agent setup | Yes |
+| `/dashboard` | Existing chat-first workspace and agent switcher | Yes |
 | `/agents` | Create and manage agents | Yes |
-| `/agents/[agentId]` | Agent configuration, memory scope, and run history | Yes |
+| `/agents/[agentId]` | Agent configuration and lifecycle | Yes |
 | `/runs/[runId]` | Live run timeline, outputs, controls, and blockers | Yes |
-| `/chat` | Chat with one agent or a selected group | Yes |
+| `/chat` | Compatibility redirect to `/dashboard` | Yes |
 | `/settings` | Workspace defaults, integrations, and preferences | Yes |
 | `/auth/github/callback` | GitHub OAuth callback handler | Yes |
+
+The existing `/agents` routes already match the product terminology and should remain canonical. Selected agent and conversation identity must be deep-linkable; changing agents must load a separate conversation rather than mutate recipients on the current thread.
 
 ### 3.3 Frontend ↔ Backend Communication
 
@@ -117,6 +123,8 @@ This is the directional target architecture. Existing single-mentor components s
 - Frontend obtains token via `firebase.auth().currentUser.getIdToken()`
 - Token refreshed automatically by Firebase SDK
 - All endpoints prefixed with `/api/v1/`
+- Remote mode must expose real list/create/select conversation contracts; the frontend must not fabricate a single workspace conversation.
+- External JSON must be decoded at the DTO boundary before it becomes agent domain state.
 
 **Firestore Realtime:**
 - Frontend reads directly from Firestore for realtime updates:
@@ -131,6 +139,13 @@ This is the directional target architecture. Existing single-mentor components s
 - Frontend does NOT write to Firestore directly (all mutations go through backend API)
 - Firestore Security Rules enforce read-only access for authenticated users to their own data
 
+**Frontend data boundaries:**
+- Firestore/API payloads use typed agent DTOs and stable `agentId` values.
+- Mappers validate transport payloads and produce agent summaries/details for UI use.
+- Profile, roster, agent detail, conversations, messages, runs, and integrations have focused loading/error/subscription state.
+- The local adapter implements the same repository contracts as the remote adapter and is selected explicitly.
+- Production configuration fails fast instead of silently falling back to local preview data.
+
 ### 3.4 Frontend Responsibilities
 
 The frontend is responsible for:
@@ -139,6 +154,8 @@ The frontend is responsible for:
 - GitHub OAuth redirect initiation
 - Firestore listener management for realtime updates
 - Agent creation/configuration and multi-run status presentation
+- Canonical selected-agent and selected-conversation state
+- One-to-one conversation isolation when switching agents
 - REST API calls for mutations and actions
 - Client-side routing and navigation
 
@@ -149,6 +166,26 @@ The frontend is NOT responsible for:
 - Decision making
 - Direct Firestore writes
 - Secret management
+
+### 3.5 Existing dashboard preservation
+
+- Preserve the current dashboard shell, roster rail, chat canvas, composer, layout, styles, navigation, and component arrangement exactly.
+- Do not add panels, widgets, badges, unread/activity indicators, analytics surfaces, or new dashboard navigation.
+- Connect existing controls and states to validated backend services without changing their visual output.
+- Remove unused subscriptions, assets, selectors, and dependencies only after proving they do not support the current dashboard.
+- One-to-one agent threads are isolated in the data layer while using the existing chat interface; group-chat UI is out of scope.
+
+### 3.6 Agent customization contract
+
+The frontend agent model supports the fields already represented by the approved UI:
+
+- stable `agentId` and lifecycle state;
+- name, role, template, objective, and instructions;
+- tone, tool grants, and context grants;
+- active/paused/archived lifecycle and schema version;
+- timestamps required by current list/detail views.
+
+Create and update commands are separate types. Template and capability metadata come from one shared catalog used by onboarding and management.
 
 ---
 
@@ -404,7 +441,7 @@ The AI system is split into clearly separated layers:
 **Model:** `gemini-2.0-flash` (or `gemini-1.5-pro` for complex analysis)
 
 **Agent configuration:** Stored data, not a hard-coded singleton. It includes:
-- Display identity: name, role, avatar/color
+- Display identity: name and role
 - Objective and user-authored instructions
 - Template type (`mentor`, `designer`, or `custom`)
 - Tone and notification policy
@@ -729,10 +766,25 @@ service cloud.firestore {
 
 ### 8.1 Frontend
 
-- **Build:** `next build && next export` (static export)
-- **Host:** Firebase Hosting
-- **Deploy:** `firebase deploy --only hosting`
-- **URL:** `https://<project>.web.app`
+- **Current build:** `npm run build` (`next build`)
+- **Runtime requirement:** the current app has dynamic routes and server-rendered request parameters; it is not documented as a static export.
+- **Hosting decision:** use a Firebase/Google deployment option that supports the Next.js runtime, or explicitly change the route/runtime architecture for static export before deployment.
+- **Validation:** build once with explicit local-preview configuration and once with explicit remote configuration.
+- **Security:** frontend environment files contain browser-safe `NEXT_PUBLIC_*` values only.
+
+Browser-safe frontend variables:
+
+| Variable | Description |
+|----------|-------------|
+| `NEXT_PUBLIC_FIREBASE_API_KEY` | Firebase web client API key |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Firebase Auth domain |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Firebase project ID |
+| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Firebase storage bucket |
+| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender ID |
+| `NEXT_PUBLIC_FIREBASE_APP_ID` | Firebase web app ID |
+| `NEXT_PUBLIC_API_URL` | Backend `/api/v1` base URL |
+| `NEXT_PUBLIC_DATA_MODE` | Explicit `local` or remote/Firebase adapter selection |
+| `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | Public Telegram bot username |
 
 ### 8.2 Backend
 
@@ -771,7 +823,9 @@ See [DECISIONS.md](DECISIONS.md) for detailed ADRs.
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Frontend framework | Next.js | SSR support, React ecosystem, Firebase integration |
+| Frontend framework | Next.js 16 App Router | React ecosystem, dynamic route support, Firebase integration |
+| Product/technical naming | Agent everywhere | One consistent domain term across UI, API, storage, and runtime |
+| Dashboard direction | Freeze the existing chat-first UI | Refactor services/state and connect the backend without visual or layout changes |
 | Backend framework | FastAPI | Async Python, auto-docs, type safety |
 | Database | Firestore | Firebase ecosystem, realtime, serverless |
 | Auth | Firebase Auth | Multi-provider, client SDK, token verification |

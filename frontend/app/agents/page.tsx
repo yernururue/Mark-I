@@ -9,7 +9,7 @@ import RouteState from "@/components/RouteState";
 import AgentForm from "@/components/agents/AgentForm";
 import DashboardShell from "@/components/dashboard/DashboardShell";
 import { useAuth } from "@/contexts/AuthContext";
-import { useDashboardData } from "@/hooks/useDashboardData";
+import { useAgentRoster } from "@/hooks/useAgentRoster";
 import { getErrorMessage } from "@/lib/errors";
 import { agentsService } from "@/services/agents";
 import type { CreateAgentInput } from "@/types/models";
@@ -17,7 +17,7 @@ import type { CreateAgentInput } from "@/types/models";
 function AgentsContent() {
   const { user } = useAuth();
   const searchParams = useSearchParams();
-  const { agents, loading, error, retry } = useDashboardData(user?.uid);
+  const { agents, loading, error, retry } = useAgentRoster(user?.uid);
   const [creating, setCreating] = useState(searchParams.get("create") === "true");
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);

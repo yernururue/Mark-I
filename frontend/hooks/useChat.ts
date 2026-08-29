@@ -21,7 +21,7 @@ function pendingAgentMessage(agentId: string, conversationId: string): Message {
 
 export function useChat(uid: string | undefined) {
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,14 +41,14 @@ export function useChat(uid: string | undefined) {
     const load = async () => {
       try {
         const roster = (await agentsService.getAgents(uid)).filter((agent) => agent.status !== "archived");
-        const initialIds = roster[0] ? [roster[0].id] : [];
-        const conversations = await chatService.getConversations(uid, initialIds);
-        const activeConversation = conversations[0] ?? null;
+        const initialAgentId = roster[0]?.id;
+        const activeConversation = initialAgentId
+          ? await chatService.getOrCreateConversation(uid, initialAgentId)
+          : null;
         const history = activeConversation ? await chatService.getMessages(uid, activeConversation.id) : [];
         if (cancelled) return;
-        const savedAgentIds = activeConversation?.agentIds.filter((id) => roster.some((agent) => agent.id === id)) ?? [];
         setAgents(roster);
-        setSelectedAgentIds(savedAgentIds.length > 0 ? savedAgentIds : initialIds);
+        setSelectedAgentId(activeConversation?.agentId ?? null);
         setConversation(activeConversation);
         setMessages(history);
         setError(null);
@@ -62,30 +62,40 @@ export function useChat(uid: string | undefined) {
     return () => { cancelled = true; };
   }, [revision, uid]);
 
-  const selectAgents = useCallback(async (agentIds: string[]) => {
-    if (!uid || !conversation || sending || agentIds.length === 0) return;
-    const next = agentIds.filter((id) => agents.some((agent) => agent.id === id));
-    if (next.length === 0) return;
-    setSelectedAgentIds(next);
-    setConversation(await chatService.updateRecipients(uid, conversation.id, next));
-  }, [agents, conversation, sending, uid]);
+  const selectAgent = useCallback(async (agentId: string) => {
+    if (!uid || sending || !agents.some((agent) => agent.id === agentId)) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const nextConversation = await chatService.getOrCreateConversation(uid, agentId);
+      const nextMessages = await chatService.getMessages(uid, nextConversation.id);
+      setSelectedAgentId(agentId);
+      setConversation(nextConversation);
+      setMessages(nextMessages);
+    } catch (selectionError) {
+      setError(getErrorMessage(selectionError, "The agent conversation could not be loaded."));
+    } finally {
+      setLoading(false);
+    }
+  }, [agents, sending, uid]);
 
   const submitMessage = useCallback(async (message: string, existingMessageId?: string) => {
     const trimmed = message.trim();
-    if (!uid || !conversation || !trimmed || sending || selectedAgentIds.length === 0) return;
+    if (!uid || !conversation || !trimmed || sending || !selectedAgentId) return;
     const clientMessageId = existingMessageId ?? createId("message");
     const userMessage: Message = {
       id: clientMessageId,
       conversationId: conversation.id,
-      agentId: selectedAgentIds.length === 1 ? selectedAgentIds[0] : undefined,
+      agentId: selectedAgentId,
       role: "user",
       content: trimmed,
       createdAt: new Date().toISOString(),
       status: "sending",
     };
-    const pending = selectedAgentIds.map((agentId) => pendingAgentMessage(agentId, conversation.id));
+    const pending = [pendingAgentMessage(selectedAgentId, conversation.id)];
     const input: SendMessageInput = {
-      agentIds: selectedAgentIds,
+      agentId: selectedAgentId,
       conversationId: conversation.id,
       message: trimmed,
       clientMessageId,
@@ -114,7 +124,7 @@ export function useChat(uid: string | undefined) {
     } finally {
       setSending(false);
     }
-  }, [conversation, selectedAgentIds, sending, uid]);
+  }, [conversation, selectedAgentId, sending, uid]);
 
   const retryMessage = useCallback((messageId: string) => {
     const failed = messages.find((message) => message.id === messageId && message.status === "failed");
@@ -123,13 +133,13 @@ export function useChat(uid: string | undefined) {
 
   return {
     agents,
-    selectedAgentIds,
+    selectedAgentId,
     conversation,
     messages,
     loading,
     sending,
     error,
-    selectAgents,
+    selectAgent,
     sendMessage: submitMessage,
     retryMessage,
     retryLoad,

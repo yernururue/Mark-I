@@ -3,7 +3,6 @@ import type {
   AgentRun,
   Artifact,
   Conversation,
-  DashboardSnapshot,
   Handoff,
   IntegrationState,
   Message,
@@ -37,6 +36,34 @@ function writeValue<T>(key: string, value: T): void {
   window.dispatchEvent(new CustomEvent(STORAGE_EVENT, { detail: key }));
 }
 
+function subscribeToLocalValue<T>(
+  uid: string,
+  name: string,
+  read: () => T,
+  onChange: (value: T) => void,
+): () => void {
+  const key = storageKey(uid, name);
+  const notify = () => onChange(read());
+  const handleStorage = (event: Event) => {
+    if (event instanceof CustomEvent && event.detail === key) {
+      notify();
+    }
+
+    if (event instanceof StorageEvent && event.key === key) {
+      notify();
+    }
+  };
+
+  notify();
+  window.addEventListener(STORAGE_EVENT, handleStorage);
+  window.addEventListener("storage", handleStorage);
+
+  return () => {
+    window.removeEventListener(STORAGE_EVENT, handleStorage);
+    window.removeEventListener("storage", handleStorage);
+  };
+}
+
 export function getLocalProfile(uid: string): UserProfile | null {
   return readValue<UserProfile | null>(storageKey(uid, "profile"), null);
 }
@@ -45,24 +72,19 @@ export function saveLocalProfile(profile: UserProfile): void {
   writeValue(storageKey(profile.uid, "profile"), profile);
 }
 
-export function getLocalDashboard(uid: string): DashboardSnapshot {
-  return {
-    profile: getLocalProfile(uid),
-    agents: getLocalAgents(uid),
-    runs: getLocalRuns(uid),
-    artifacts: getLocalArtifacts(uid),
-    handoffs: getLocalHandoffs(uid),
-    observations: readValue(storageKey(uid, "observations"), []),
-    decisions: readValue(storageKey(uid, "decisions"), []),
-  };
-}
-
 export function getLocalAgents(uid: string): Agent[] {
   return readValue(storageKey(uid, "agents"), []);
 }
 
 export function saveLocalAgents(uid: string, agents: Agent[]): void {
   writeValue(storageKey(uid, "agents"), agents);
+}
+
+export function subscribeToLocalAgents(
+  uid: string,
+  onChange: (agents: Agent[]) => void,
+): () => void {
+  return subscribeToLocalValue(uid, "agents", () => getLocalAgents(uid), onChange);
 }
 
 export function getLocalRuns(uid: string): AgentRun[] {
@@ -87,31 +109,6 @@ export function getLocalHandoffs(uid: string): Handoff[] {
 
 export function saveLocalHandoffs(uid: string, handoffs: Handoff[]): void {
   writeValue(storageKey(uid, "handoffs"), handoffs);
-}
-
-export function subscribeToLocalDashboard(
-  uid: string,
-  onChange: (snapshot: DashboardSnapshot) => void,
-): () => void {
-  const notify = () => onChange(getLocalDashboard(uid));
-  const handleStorage = (event: Event) => {
-    if (
-      event instanceof CustomEvent &&
-      typeof event.detail === "string" &&
-      event.detail.startsWith(`${STORAGE_PREFIX}:${uid}:`)
-    ) {
-      notify();
-    }
-  };
-
-  notify();
-  window.addEventListener(STORAGE_EVENT, handleStorage);
-  window.addEventListener("storage", notify);
-
-  return () => {
-    window.removeEventListener(STORAGE_EVENT, handleStorage);
-    window.removeEventListener("storage", notify);
-  };
 }
 
 export function getLocalConversations(uid: string): Conversation[] {

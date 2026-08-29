@@ -18,22 +18,42 @@ export interface OnboardingInput {
   language: PreferredLanguage;
 }
 
-export interface Agent {
+export type AgentTemplate = "mentor" | "designer" | "custom";
+export type AgentTone = "chill" | "normal" | "brutal" | "concise";
+export type AgentStatus = "active" | "paused" | "archived";
+
+export interface AgentCustomization {
+  role: string;
+  template: AgentTemplate;
+  objective: string;
+  instructions: string;
+  tone: AgentTone;
+  toolGrants: string[];
+  contextGrants: string[];
+}
+
+export interface AgentSummary {
   id: string;
   name: string;
   role: string;
-  template: "mentor" | "designer" | "custom";
-  objective: string;
-  instructions: string;
-  tone: "chill" | "normal" | "brutal" | "concise";
-  toolGrants: string[];
-  contextGrants: string[];
-  status: "active" | "paused" | "archived";
+  template: AgentTemplate;
+  status: AgentStatus;
   createdAt: string;
   updatedAt: string;
 }
 
-export type CreateAgentInput = Omit<Agent, "id" | "status" | "createdAt" | "updatedAt">;
+export interface AgentDetail extends AgentSummary, AgentCustomization {}
+
+/** Compatibility alias while consumers move from one catch-all model. */
+export type Agent = AgentDetail;
+
+export interface CreateAgentInput extends AgentCustomization {
+  name: string;
+}
+
+export type UpdateAgentInput = Partial<CreateAgentInput> & {
+  status?: AgentStatus;
+};
 
 export type RunStatus =
   | "queued"
@@ -109,19 +129,9 @@ export interface Decision {
   createdAt: string;
 }
 
-export interface DashboardSnapshot {
-  profile: UserProfile | null;
-  agents: Agent[];
-  runs: AgentRun[];
-  artifacts: Artifact[];
-  handoffs: Handoff[];
-  observations: Observation[];
-  decisions: Decision[];
-}
-
 export interface Conversation {
   id: string;
-  agentIds: string[];
+  agentId: string;
   title: string;
   updatedAt: string;
 }
@@ -142,7 +152,7 @@ export interface Message {
 }
 
 export interface SendMessageInput {
-  agentIds: string[];
+  agentId: string;
   conversationId: string;
   message: string;
   clientMessageId: string;
