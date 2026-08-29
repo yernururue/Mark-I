@@ -106,20 +106,33 @@ class DummyMessage:
         self.nacks += 1
 
 
+def worker_context(db: FakeFirestore) -> SimpleNamespace:
+    return SimpleNamespace(
+        db=db,
+        observation_service=ObservationService(db),
+        skill_service=SkillService(db, transactional_runner=lambda function: function),
+        decision_service=DecisionService(db),
+        telegram_service=SimpleNamespace(send_message=AsyncMock()),
+        processed_event_service=ProcessedEventService(db, transactional_runner=lambda function: function),
+    )
+
+
+def worker_envelope() -> GitHubEventEnvelope:
+    return GitHubEventEnvelope(
+        deliveryId="delivery-1",
+        eventType="push",
+        uid="user-1",
+        repoFullName="alex/repo",
+        payload={"repository": {"full_name": "alex/repo"}, "commits": []},
+    )
+
+
 def test_completed_delivery_acknowledges_duplicate_without_repeating_business_effects(monkeypatch):
     db = FakeFirestore()
     db.collection("users").document("user-1").set(
         {"skills": {}, "intensity": "normal", "telegramUserId": 123}
     )
-    telegram = SimpleNamespace(send_message=AsyncMock())
-    context = SimpleNamespace(
-        db=db,
-        observation_service=ObservationService(db),
-        skill_service=SkillService(db, transactional_runner=lambda function: function),
-        decision_service=DecisionService(db),
-        telegram_service=telegram,
-        processed_event_service=ProcessedEventService(db, transactional_runner=lambda function: function),
-    )
+    context = worker_context(db)
 
     async def analyzer(**kwargs):
         return SimpleNamespace(
@@ -131,13 +144,7 @@ def test_completed_delivery_acknowledges_duplicate_without_repeating_business_ef
         )
 
     monkeypatch.setattr("ai.analyzers.github_analyzer.analyze_github_event", analyzer)
-    envelope = GitHubEventEnvelope(
-        deliveryId="delivery-1",
-        eventType="push",
-        uid="user-1",
-        repoFullName="alex/repo",
-        payload={"repository": {"full_name": "alex/repo"}, "commits": []},
-    )
+    envelope = worker_envelope()
 
     first = DummyMessage(envelope.model_dump_json().encode())
     second = DummyMessage(envelope.model_dump_json().encode())
@@ -148,4 +155,51 @@ def test_completed_delivery_acknowledges_duplicate_without_repeating_business_ef
     assert len(db.collection("users").document("user-1").collection("observations").get()) == 1
     assert len(db.collection("users").document("user-1").collection("decisions").get()) == 1
     assert db.collection("users").document("user-1").get().to_dict()["skills"]["testing"] == 7.0
-    assert telegram.send_message.await_count == 1
+    assert context.telegram_service.send_message.await_count == 1
+
+
+def test_invalid_envelope_is_terminally_acknowledged_without_a_claim():
+    message = DummyMessage(b'{"schemaVersion": 1}')
+
+    asyncio.run(process_message_async(message, SimpleNamespace()))
+
+    assert (message.acks, message.nacks) == (1, 0)
+
+
+def test_retryable_analyzer_error_releases_claim_and_nacks(monkeypatch):
+    db = FakeFirestore()
+    db.collection("users").document("user-1").set({"skills": {}, "intensity": "normal"})
+    context = worker_context(db)
+
+    async def unavailable(**kwargs):
+        raise TimeoutError("Gemini timed out")
+
+    monkeypatch.setattr("ai.analyzers.github_analyzer.analyze_github_event", unavailable)
+    message = DummyMessage(worker_envelope().model_dump_json().encode())
+
+    asyncio.run(process_message_async(message, context))
+
+    record = db.collection("processed_events").document("github:delivery-1:user-1").get().to_dict()
+    assert (message.acks, message.nacks) == (0, 1)
+    assert record["status"] == "retryable"
+    assert record["lastError"] == "TimeoutError"
+
+
+def test_terminal_analyzer_error_completes_claim_and_acks(monkeypatch):
+    from ai.analyzers.github_analyzer import GitHubAnalysisTerminalError
+
+    db = FakeFirestore()
+    db.collection("users").document("user-1").set({"skills": {}, "intensity": "normal"})
+    context = worker_context(db)
+
+    async def invalid_output(**kwargs):
+        raise GitHubAnalysisTerminalError("invalid JSON")
+
+    monkeypatch.setattr("ai.analyzers.github_analyzer.analyze_github_event", invalid_output)
+    message = DummyMessage(worker_envelope().model_dump_json().encode())
+
+    asyncio.run(process_message_async(message, context))
+
+    record = db.collection("processed_events").document("github:delivery-1:user-1").get().to_dict()
+    assert (message.acks, message.nacks) == (1, 0)
+    assert record["status"] == "completed"

@@ -8,7 +8,7 @@ from google.cloud import firestore
 from app.config import RuntimeRole, Settings, get_settings
 from app.models.github import GitHubEventEnvelope
 from app.services.observation_service import ObservationService
-from app.services.skill_service import SkillService
+from app.services.skill_service import SkillService, UserNotFoundError
 from app.services.decision_service import DecisionService
 from app.services.telegram_service import TelegramService
 from app.services.processed_event_service import EventClaimStatus, ProcessedEventService
@@ -17,6 +17,11 @@ from workers.github_escalation import calculate_escalation_flags
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def is_terminal_processing_error(exc: Exception) -> bool:
+    """Classify errors that cannot become valid on a Pub/Sub redelivery."""
+    return isinstance(exc, (ValueError, LookupError))
 
 class WorkerContext:
     def __init__(self, settings: Settings, db):
@@ -76,82 +81,84 @@ async def process_message_async(message: pubsub_v1.subscriber.message.Message, c
             changes_text=event_context.changesText,
         )
         
-        if observation_data:
-            user_doc = context.db.collection("users").document(uid).get()
-            if not user_doc.exists:
-                raise LookupError(f"GitHub event user {uid!r} does not exist")
-            user_data = user_doc.to_dict() or {}
-            existing_skills = user_data.get("skills") or {}
-            concept_existed = observation_data.concept in existing_skills
-            previous_score = existing_skills.get(observation_data.concept)
+        user_doc = context.db.collection("users").document(uid).get()
+        if not user_doc.exists:
+            raise UserNotFoundError(f"GitHub event user {uid!r} does not exist")
+        user_data = user_doc.to_dict() or {}
+        existing_skills = user_data.get("skills") or {}
+        concept_existed = observation_data.concept in existing_skills
+        previous_score = existing_skills.get(observation_data.concept)
 
-            # Create Observation
-            metadata = {
-                **event_context.metadata,
-                "ref": event_context.ref,
-            }
-            observation = context.observation_service.create_observation(
-                uid=uid,
-                source="github",
-                summary=observation_data.summary,
-                concept=observation_data.concept,
-                sentiment=observation_data.sentiment,
-                significance_score=observation_data.significanceScore,
-                metadata=metadata,
-                observation_id=f"github-{envelope.deliveryId}-{uid}",
-            )
+        # Create Observation
+        metadata = {
+            **event_context.metadata,
+            "ref": event_context.ref,
+        }
+        observation = context.observation_service.create_observation(
+            uid=uid,
+            source="github",
+            summary=observation_data.summary,
+            concept=observation_data.concept,
+            sentiment=observation_data.sentiment,
+            significance_score=observation_data.significanceScore,
+            metadata=metadata,
+            observation_id=f"github-{envelope.deliveryId}-{uid}",
+        )
             
-            # Proficiency is a skill input; significance belongs only to decisions.
-            updated_score = context.skill_service.update_skill(
-                uid=uid,
-                concept=observation_data.concept,
-                assessment=observation_data.proficiencyAssessment,
-                weight=0.3,
-                processed_event_id=context.processed_event_service.document_id(envelope.deliveryId, uid),
-            )
+        # Proficiency is a skill input; significance belongs only to decisions.
+        updated_score = context.skill_service.update_skill(
+            uid=uid,
+            concept=observation_data.concept,
+            assessment=observation_data.proficiencyAssessment,
+            weight=0.3,
+            processed_event_id=context.processed_event_service.document_id(envelope.deliveryId, uid),
+        )
             
-            intensity = user_data.get("intensity", "normal")
-            telegram_user_id = user_data.get("telegramUserId")
-            recent_observations = context.observation_service.get_recent_observations(
-                uid, limit=3, concept=observation_data.concept
-            )
-            escalation_flags = calculate_escalation_flags(
-                concept_existed=concept_existed,
-                previous_score=previous_score,
-                updated_score=updated_score,
-                sentiment=observation_data.sentiment,
-                recent_sentiments=[item.sentiment for item in recent_observations],
-            )
-            should_notify, reason = context.decision_service.evaluate_and_log(
-                uid=uid,
-                observation_id=observation.id,
-                significance=observation_data.significanceScore,
-                intensity=intensity,
-                escalation_flags=escalation_flags,
-                decision_id=f"github-{envelope.deliveryId}-{uid}",
-            )
+        intensity = user_data.get("intensity", "normal")
+        telegram_user_id = user_data.get("telegramUserId")
+        recent_observations = context.observation_service.get_recent_observations(
+            uid, limit=3, concept=observation_data.concept
+        )
+        escalation_flags = calculate_escalation_flags(
+            concept_existed=concept_existed,
+            previous_score=previous_score,
+            updated_score=updated_score,
+            sentiment=observation_data.sentiment,
+            recent_sentiments=[item.sentiment for item in recent_observations],
+        )
+        should_notify, reason = context.decision_service.evaluate_and_log(
+            uid=uid,
+            observation_id=observation.id,
+            significance=observation_data.significanceScore,
+            intensity=intensity,
+            escalation_flags=escalation_flags,
+            decision_id=f"github-{envelope.deliveryId}-{uid}",
+        )
 
-            if should_notify and telegram_user_id and context.processed_event_service.claim_effect(
-                envelope.deliveryId, uid, "telegramNotification"
-            ):
-                msg = (
-                    f"🤖 <b>Mark-I GitHub Analysis</b>\n\n"
-                    f"<b>Concept:</b> <code>{html.escape(observation_data.concept)}</code>\n"
-                    f"<b>Summary:</b> {html.escape(observation_data.summary)}\n\n"
-                    f"<i>(Reason for ping: {html.escape(reason)})</i>"
-                )
-                await context.telegram_service.send_message(telegram_user_id, msg)
+        if should_notify and telegram_user_id and context.processed_event_service.claim_effect(
+            envelope.deliveryId, uid, "telegramNotification"
+        ):
+            msg = (
+                f"🤖 <b>Mark-I GitHub Analysis</b>\n\n"
+                f"<b>Concept:</b> <code>{html.escape(observation_data.concept)}</code>\n"
+                f"<b>Summary:</b> {html.escape(observation_data.summary)}\n\n"
+                f"<i>(Reason for ping: {html.escape(reason)})</i>"
+            )
+            await context.telegram_service.send_message(telegram_user_id, msg)
             
             logger.info(f"Successfully processed and updated skill '{observation_data.concept}' for user {uid}")
         
         context.processed_event_service.complete(envelope.deliveryId, envelope.uid)
         message.ack()
 
-    except ValidationError:
-        logger.warning("Acknowledging invalid GitHub event envelope")
-        message.ack()
     except Exception as exc:
-        logger.exception("Recoverable error processing GitHub event: %s", type(exc).__name__)
+        if is_terminal_processing_error(exc):
+            logger.warning("Acknowledging terminal GitHub event error: %s", type(exc).__name__)
+            if envelope is not None and claim_acquired:
+                context.processed_event_service.complete(envelope.deliveryId, envelope.uid)
+            message.ack()
+            return
+        logger.exception("Retrying GitHub event after recoverable error: %s", type(exc).__name__)
         if envelope is not None and claim_acquired:
             context.processed_event_service.release_for_retry(
                 envelope.deliveryId,

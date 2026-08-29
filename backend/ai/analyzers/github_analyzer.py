@@ -1,6 +1,7 @@
 import logging
 import json
-from typing import Optional
+
+from pydantic import ValidationError
 
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -10,16 +11,25 @@ from ai.prompts import GITHUB_ANALYZER_SYSTEM_PROMPT, GITHUB_ANALYZER_USER_PROMP
 
 logger = logging.getLogger(__name__)
 
+
+class GitHubAnalysisTerminalError(ValueError):
+    """The model response is unusable and retrying the same delivery cannot fix it."""
+
+
+class GitHubAnalysisRetryableError(RuntimeError):
+    """The analyzer boundary was unavailable; worker delivery may be retried."""
+
 async def analyze_github_event(
     repo: str,
     event_type: str,
     ref: str,
     commit_count: int,
     changes_text: str
-) -> Optional[GithubObservationSchema]:
+) -> GithubObservationSchema:
     """
     Analyzes a GitHub event using Gemini and returns a structured observation.
-    Returns None if parsing fails or an error occurs.
+    Raises a typed error so the worker can distinguish ACK-worthy malformed
+    output from a Pub/Sub-retryable runtime failure.
     """
     config = get_github_analyzer_config(GITHUB_ANALYZER_SYSTEM_PROMPT)
     prompt = GITHUB_ANALYZER_USER_PROMPT_TEMPLATE.format(
@@ -39,8 +49,10 @@ async def analyze_github_event(
                 text = event.content.parts[0].text
                 if text:
                     return GithubObservationSchema.model_validate(json.loads(text))
-        logger.error("GitHub analyzer produced no structured response.")
-        return None
-    except Exception as e:
-        logger.error("GitHub analysis failed: %s", type(e).__name__)
-        return None
+        raise GitHubAnalysisTerminalError("GitHub analyzer produced no structured response")
+    except (json.JSONDecodeError, ValidationError) as exc:
+        raise GitHubAnalysisTerminalError("GitHub analyzer returned invalid structured output") from exc
+    except GitHubAnalysisTerminalError:
+        raise
+    except Exception as exc:
+        raise GitHubAnalysisRetryableError("GitHub analyzer is unavailable") from exc
