@@ -1,10 +1,32 @@
 plans:
+  - name: frontend-product-readiness
+    path: docs/plans/2026-08-29-frontend-product-readiness/
+    status: in-progress
+    created: 2026-08-29
+    started: 2026-08-29
+    shipped:
+    tasks:
+      - name: architecture-and-data-layer
+        file: 01-architecture-and-data-layer.md
+        status: in-progress
+      - name: authentication-and-onboarding
+        file: 02-authentication-and-onboarding.md
+        status: pending
+      - name: dashboard-and-chat
+        file: 03-dashboard-and-chat.md
+        status: in-progress
+      - name: settings-and-integrations
+        file: 04-settings-and-integrations.md
+        status: in-progress
+      - name: validation-and-handoff
+        file: 05-validation-and-handoff.md
+        status: pending
   - name: frontend-mvp
     path: docs/plans/2026-08-23-frontend-mvp/
-    status: in-progress
+    status: shipped
     created: 2026-08-23
     started: 2026-08-23
-    shipped:
+    shipped: 2026-08-28
     tasks:
       - name: firebase-auth
         file: 01-firebase-auth.md
@@ -17,10 +39,10 @@ plans:
         status: done
       - name: dashboard
         file: 04-dashboard.md
-        status: in-progress
+        status: done
       - name: unified-chat
         file: 05-unified-chat.md
-        status: pending
+        status: done
       - name: settings-integrations
         file: 06-settings-integrations.md
         status: pending

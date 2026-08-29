@@ -1,51 +1,65 @@
 # Mark-I — Product Requirements Document
 
-> **Status:** Draft v1.0  
-> **Last updated:** 2026-08-19  
+> **Status:** Draft v1.2
+> **Last updated:** 2026-08-29  
 > **Authors:** Yernur (backend/agent), Vlad (frontend)
 
 ---
 
 ## 1. Problem
 
-Developers learning new skills lack **proactive, contextual feedback** on their growth trajectory.
+People increasingly use AI across different parts of their work, but most assistants are still designed as one generic agent with one personality, one context, and one task at a time.
 
-Current tools (GitHub stats, LeetCode streaks, learning platforms) are:
+Current assistants and productivity tools are:
 - **Passive** — they only show data when you ask for it
-- **Generic** — not personalized to the user's goal
+- **Generic** — one assistant is expected to mentor, design, research, plan, and execute equally well
 - **Silent** — they never proactively suggest what to do next
-- **Disconnected** — skill progress, coding activity, and opportunities exist in separate silos
+- **Sequential** — users cannot easily assign several specialists and let them work at the same time
+- **Disconnected** — each conversation loses the shared goal, artifacts, and progress of the wider workspace
 
-There is no system that continuously **watches** a developer's activity, **analyzes** their strengths and weaknesses, **discovers** relevant opportunities, and **proactively communicates** actionable insights — all personalized to a stated goal.
+There is no simple system where a user can create a personal roster of specialized AI agents, configure each one to a preferred role and style, and run several of them simultaneously toward a shared objective while retaining clear ownership and visibility.
 
 ---
 
 ## 2. Target User
 
-**Junior-to-mid developers** who are actively learning and improving, specifically those who:
-- Have a defined learning goal (e.g., "get a job", "master algorithms", "learn a new stack")
-- Use GitHub for coding practice or real projects
-- Use Telegram as a daily messenger
-- Want proactive guidance, not just passive tracking
+**Builders, creators, and knowledge workers** who regularly switch between different modes of work and want specialist AI collaborators. The initial product remains developer-focused and integrates deeply with GitHub, but the product model supports broader roles such as design, research, planning, and critique.
+
+They:
+- Have one or more ongoing goals or projects
+- Want different agents for different responsibilities
+- Need multiple agents to make progress simultaneously
+- Want control over each agent's instructions, tone, tools, and access
+- Need proactive help without losing transparency or control
 
 ---
 
 ## 3. Product Vision
 
-**Mark-I** is an AI-powered **developer growth agent** — a personal mentor that:
-- **Observes** the developer's GitHub activity in real-time
-- **Tracks** skill progression across concepts and technologies
-- **Discovers** relevant opportunities (articles, jobs, challenges)
-- **Decides** when and how to communicate based on significance and user preferences
-- **Converses** naturally through Telegram and web, with full context awareness
+**Mark-I** is a workspace for **Multiple Customizable Agents**. An agent is a user-created AI collaborator with a distinct identity, role, behavior, permissions, context, conversation history, and work record. Users can create several agents, switch between them in the existing dashboard, and manage each one independently.
 
-The agent operates like a thoughtful mentor — it doesn't spam every commit, but it notices patterns, flags regressions, celebrates improvements, and surfaces the right opportunity at the right time.
+The existing dashboard is the approved product UI. Its layout, styling, roster, chat canvas, navigation, and interaction design must remain visually unchanged. Future frontend work cleans up internals and connects the current experience to the backend.
+
+An agent can be a mentor that observes GitHub activity, a designer that develops product directions, a researcher that gathers evidence, a planner that decomposes work, or a custom specialist defined by the user. Agents can:
+- **Specialize** around a clear role and user-defined objective
+- **Observe** connected activity and react proactively when permitted
+- **Collaborate** through shared workspace context and explicit handoffs
+- **Run concurrently** on independent or coordinated tasks
+- **Report** status, decisions, outputs, and blockers in a unified workspace
+- **Adapt** tone, intensity, tools, and notification behavior to user preferences
+
+The mentor experience remains an important first template, not the boundary of the product.
+
+### Product terminology
+
+- **Agent** is the only product and technical term. It is used consistently in navigation, onboarding, settings, chat, APIs, Firestore, and runtime code.
+- `agentId` is the stable identifier used across conversations, runs, artifacts, decisions, and integrations.
 
 ---
 
 ## 4. Core Value Proposition
 
-> "An AI agent that watches your code, tracks your growth, finds relevant opportunities, and proactively mentors you through Telegram — knowing when to speak and when to stay silent."
+> "Create your own agents—custom AI collaborators you can shape, switch between, and work with from one dashboard."
 
 ---
 
@@ -69,6 +83,15 @@ The agent operates like a thoughtful mentor — it doesn't spam every commit, bu
 - **Wants:** Weekly insights, relevant articles/tutorials, progress tracking
 - **Intensity:** Chill or Normal
 
+### Persona C — "The Multi-disciplinary Builder" (Primary)
+
+- **Name:** Sam, 26
+- **Goal:** Take a product from idea to working launch
+- **Behavior:** Alternates between product strategy, coding, design, research, and communication
+- **Pain:** A single general-purpose assistant mixes contexts and becomes a bottleneck
+- **Wants:** A mentor agent, product designer agent, and research agent working in parallel with visible progress
+- **Control needs:** Separate instructions and tool access for every agent
+
 ---
 
 ## 6. User Journeys
@@ -79,56 +102,84 @@ The agent operates like a thoughtful mentor — it doesn't spam every commit, bu
 User visits Mark-I website
     → Signs in (Google / GitHub / Email)
     → Sees onboarding wizard
-    → Sets goal, intensity, preferred language
+    → Sets workspace goal, preferred language, and default notification behavior
+    → Creates a first agent from a template or from scratch
+    → Configures its name, role, instructions, tone, tools, and context access
     → Connects GitHub via OAuth
     → Generates Telegram link code
     → Sends /start to bot, then /link <code>
     → Telegram linked, dashboard populated
-    → System begins monitoring
+    → The agent becomes available in the dashboard
 ```
 
-### Journey 2 — GitHub Activity Loop
+### Journey 2 — Build an Agent Roster
+
+```
+User opens agent management from the existing dashboard
+    → Creates a mentor agent from the developer-growth template
+    → Creates a designer agent from the product-design template
+    → Creates a custom research agent
+    → Reviews each agent's identity, goal, tools, memory scope, and notification policy
+    → Switches between agents without mixing their conversation histories
+```
+
+### Journey 3 — Parallel Execution
+
+```
+User defines a product objective
+    → Assigns competitor research to the research agent
+    → Assigns experience concepts to the designer agent
+    → Assigns an implementation learning plan to the mentor agent
+    → Mark-I starts independent runs concurrently
+    → Agents publish progress and artifacts to the workspace
+    → User reviews outputs or asks agents to hand work to one another
+```
+
+### Journey 4 — GitHub Activity Loop (Mentor Template)
 
 ```
 User pushes code to connected repo
     → GitHub webhook fires
     → Backend receives event via Pub/Sub
-    → Gemini analyzes diff/PR content
+    → Event router assigns it to the configured mentor agent
+    → Gemini analyzes diff/PR content using that agent's configuration
     → Observation created (concept, sentiment, summary)
     → Skill scores updated (weighted average)
     → Decision policy evaluates significance
     → If significant: Telegram notification sent
-    → Dashboard reflects updated skills and observations
+    → The mentor agent can reference the updated skills and observations in the existing chat
 ```
 
-### Journey 3 — Opportunity Discovery
+### Journey 5 — Opportunity Discovery
 
 ```
 Cloud Scheduler triggers (hourly for demo, daily for prod)
     → Opportunity collector fetches from configured sources
-    → Gemini evaluates relevance against user's goal and skill profile
+    → Event router assigns evaluation to an agent with opportunity-discovery access
+    → That agent evaluates relevance against its goal and permitted workspace context
     → If relevant: observation created, Telegram notification sent
-    → Dashboard shows new opportunity
+    → The assigned agent can surface the opportunity through the existing chat and configured notification channel
 ```
 
-### Journey 4 — Conversational Interaction
+### Journey 6 — Conversational Interaction
 
 ```
 User sends message (via Telegram or web chat)
     → Backend routes to unified chat service
-    → ADK agent receives message + full user context
-    → Agent reasons, optionally calls tools
+    → User addresses the currently selected agent
+    → Runtime loads the addressed agent's configuration and permitted context
+    → The agent reasons, optionally calls permitted tools or requests a handoff
     → Response sent back via same channel
     → Message history visible on both Telegram and web
 ```
 
-### Journey 5 — Decision Transparency
+### Journey 7 — Decision and Run Transparency
 
 ```
-User wonders: "Why did the agent notify me about this but not that?"
-    → User asks agent in chat
-    → Agent explains decision policy reasoning
-    → Dashboard shows "why" block next to each decision
+User wonders: "Why did this agent act, and what are the others doing?"
+    → User opens the run timeline or asks in chat
+    → Mark-I shows which agent acted, its trigger, tools used, status, and decision-policy reasoning
+    → User can pause a run, change the assignment, or inspect the produced artifact
 ```
 
 ---
@@ -153,9 +204,9 @@ User wonders: "Why did the agent notify me about this but not that?"
 |-------|-------|
 | **ID** | F2 |
 | **Name** | User Onboarding |
-| **Description** | First-time setup wizard where users define their learning goal, intensity preference, and language. Stores profile in Firestore. |
-| **User Story** | As a new user, I want to set my learning goal and communication intensity so the agent can personalize its behavior. |
-| **Acceptance Criteria** | 1. Onboarding shown only on first sign-in (no profile exists). 2. User selects goal type. 3. User selects intensity (chill / normal / brutal). 4. Profile saved to Firestore `users/{uid}`. |
+| **Description** | First-time setup wizard where users define workspace defaults and create their first customizable agent. |
+| **User Story** | As a new user, I want to define my workspace and first agent so I arrive at a usable dashboard. |
+| **Acceptance Criteria** | 1. Onboarding is shown until workspace defaults and a first agent both exist. 2. Drafts survive refresh/retry. 3. User configures goal, language, notification behavior, and first-agent identity/behavior/access. 4. Completion is atomic or recoverable and idempotent. |
 | **Priority** | **MUST** |
 | **Dependencies** | F1 |
 
@@ -203,7 +254,7 @@ User wonders: "Why did the agent notify me about this but not that?"
 | **Name** | Skill Score Tracking |
 | **Description** | System maintains a map of skill → score (0-10) for each user. Updated via weighted average: `new = old * 0.7 + assessment * 0.3`. Skills are automatically discovered from GitHub analysis. |
 | **User Story** | As a user, I want to see my proficiency level across different programming concepts so I can identify strengths and weaknesses. |
-| **Acceptance Criteria** | 1. Skills auto-discovered from GitHub analysis. 2. Score 0-10 range, updated via weighted average. 3. Skill history is preserved (via observations). 4. Dashboard displays current skill levels. 5. Agent can reference skills in conversation. |
+| **Acceptance Criteria** | 1. Skills auto-discovered from GitHub analysis. 2. Score 0-10 range, updated via weighted average. 3. Skill history is preserved through observations. 4. The selected agent can reference current skills and history in the existing conversation. 5. No new dashboard visualization is required. |
 | **Priority** | **MUST** |
 | **Dependencies** | F5 |
 
@@ -214,8 +265,8 @@ User wonders: "Why did the agent notify me about this but not that?"
 | **ID** | F7 |
 | **Name** | Observation System |
 | **Description** | Core data entity that records every meaningful event — GitHub analysis results, opportunity matches, and chat-derived insights. Each observation includes source, summary, concept, sentiment, significance score, and timestamps. |
-| **User Story** | As a user, I want a feed of what the agent has noticed about my activity so I can understand its reasoning. |
-| **Acceptance Criteria** | 1. Observations created from GitHub events, opportunities, and chat. 2. Each observation has source, summary, concept, sentiment, significance score. 3. Observations feed displayed on dashboard. 4. Observations used as context for agent reasoning. |
+| **User Story** | As a user, I want my agent to remember meaningful activity and explain what it noticed when I ask. |
+| **Acceptance Criteria** | 1. Observations are created from GitHub events, opportunities, and chat. 2. Each observation has source, summary, concept, sentiment, significance score, and agent attribution. 3. Observations are available as context for the owning agent. 4. The agent can explain relevant observations through the existing chat. 5. No new dashboard feed is required. |
 | **Priority** | **MUST** |
 | **Dependencies** | F5 |
 
@@ -237,7 +288,7 @@ User wonders: "Why did the agent notify me about this but not that?"
 |-------|-------|
 | **ID** | F9 |
 | **Name** | Opportunity Discovery |
-| **Description** | Scheduled collector fetches content from configured sources, Gemini evaluates relevance against user's goal and skill profile, creates observations for relevant matches. |
+| **Description** | Scheduled collector fetches content from configured sources and routes it to an authorized agent, which evaluates relevance against its objective and permitted workspace context and creates observations for relevant matches. |
 | **User Story** | As a user, I want the agent to find relevant articles, jobs, and challenges that match my goal and current skill level. |
 | **Acceptance Criteria** | 1. Cloud Scheduler triggers collection (hourly for demo). 2. Sources fetched and parsed. 3. Gemini evaluates relevance per user. 4. Relevant items create observations. 5. Decision policy determines notification. |
 | **Priority** | **MUST** |
@@ -249,9 +300,9 @@ User wonders: "Why did the agent notify me about this but not that?"
 |-------|-------|
 | **ID** | F10 |
 | **Name** | Unified Chat (Telegram + Web) |
-| **Description** | Single chat service handles both Telegram and web messages. Same ADK agent, same conversation history. User can switch between channels seamlessly. |
-| **User Story** | As a user, I want to chat with the agent on both Telegram and the website and see the same conversation history. |
-| **Acceptance Criteria** | 1. Chat works from both Telegram and web. 2. Same conversation history visible on both channels. 3. Agent has access to full user context (skills, observations, goal). 4. Agent responds in user's language (auto-detect). 5. Messages stored in Firestore `users/{uid}/messages`. |
+| **Description** | One conversation service handles Telegram and web while preserving agent identity, isolated one-to-one threads, context, and channel continuity. |
+| **User Story** | As a user, I want to switch between agents without mixing conversations or losing who is responsible and what context is active. |
+| **Acceptance Criteria** | 1. Chat works from both Telegram and web. 2. Every thread records its addressed `agentId`. 3. Switching agents loads the correct isolated conversation history. 4. Each agent receives only permitted context. 5. Agent identity is visible in every response. |
 | **Priority** | **MUST** |
 | **Dependencies** | F1, F3 |
 
@@ -261,9 +312,9 @@ User wonders: "Why did the agent notify me about this but not that?"
 |-------|-------|
 | **ID** | F11 |
 | **Name** | Dashboard |
-| **Description** | Main frontend view showing skill radar/bars, observation feed, recent decisions with explanations, and quick stats. Real-time updates via Firestore listeners. |
-| **User Story** | As a user, I want a dashboard that shows my progress, recent activity, and agent decisions at a glance. |
-| **Acceptance Criteria** | 1. Skill visualization (bars or radar chart). 2. Observation feed (filterable by source). 3. Decision log with "why" explanations. 4. Real-time updates (Firestore onSnapshot). 5. Responsive design. |
+| **Description** | The existing chat-first dashboard remains the main workspace and is visually frozen. Its current roster switches agents and its current controls are connected to real backend state. |
+| **User Story** | As a user, I want the dashboard I already know to work reliably with real agent data. |
+| **Acceptance Criteria** | 1. Preserve the current shell, roster, chat canvas, layout, styling, and navigation. 2. Do not add dashboard panels, widgets, badges, indicators, or new navigation patterns. 3. Switching is deep-linkable and conversation-safe. 4. Current loading/error/empty states use real backend data. 5. Before/after screenshots show no unintended visual change. |
 | **Priority** | **MUST** |
 | **Dependencies** | F6, F7, F8 |
 
@@ -285,9 +336,9 @@ User wonders: "Why did the agent notify me about this but not that?"
 |-------|-------|
 | **ID** | F13 |
 | **Name** | Settings Page |
-| **Description** | Frontend page for managing profile: goal, intensity, connected repos, Telegram link status, language preference. |
-| **User Story** | As a user, I want to change my goal, intensity, and connected repos at any time. |
-| **Acceptance Criteria** | 1. Display and edit goal. 2. Display and change intensity. 3. Show connected GitHub repos, allow disconnect/add. 4. Show Telegram link status, allow re-linking. 5. Changes immediately reflected in agent behavior. |
+| **Description** | Frontend area for managing workspace defaults, integrations, and every agent's identity, role, instructions, tone, tools, context access, and notification policy. |
+| **User Story** | As a user, I want precise control over how each agent behaves and what it can access. |
+| **Acceptance Criteria** | 1. Connect the current create, edit, duplicate, pause, and archive controls. 2. Persist the existing role, instructions, tone, tools, and context controls. 3. Manage GitHub and Telegram integrations. 4. Updates affect new runs immediately. 5. Do not expand the approved dashboard UI. |
 | **Priority** | **MUST** |
 | **Dependencies** | F1, F2 |
 
@@ -297,23 +348,71 @@ User wonders: "Why did the agent notify me about this but not that?"
 |-------|-------|
 | **ID** | F14 |
 | **Name** | Decision Transparency |
-| **Description** | Dashboard block showing recent agent decisions: "notified because X" or "stayed silent because Y". Powerful demo element. |
+| **Description** | Decision explanations are available through the existing chat experience and run details without adding a dashboard block. |
 | **User Story** | As a user, I want to understand why the agent decided to notify me or stay silent about specific events. |
-| **Acceptance Criteria** | 1. Dashboard shows last N decisions with explanations. 2. Each decision shows: trigger, significance score, threshold, action taken, reason. 3. User can ask agent about any decision in chat. |
+| **Acceptance Criteria** | 1. User can ask an agent about a decision in the existing chat. 2. Existing run details can show trigger, significance score, threshold, action, and reason when available. 3. No new dashboard widget is required. |
 | **Priority** | **SHOULD** |
 | **Dependencies** | F8, F11 |
 
-### F15 — Intensity Personas
+### F15 — Agent Identity and Customization
 
 | Field | Value |
 |-------|-------|
 | **ID** | F15 |
-| **Name** | Intensity-based Agent Persona |
-| **Description** | Agent's communication style adapts to user's intensity setting: chill (encouraging, gentle), normal (balanced, informative), brutal (direct, challenging). |
-| **User Story** | As a user, I want the agent's tone to match my preferred communication style. |
-| **Acceptance Criteria** | 1. Three distinct personas in agent prompts. 2. Persona affects message tone, not decision logic. 3. Persona can be changed in settings and takes effect immediately. |
-| **Priority** | **SHOULD** |
+| **Name** | Configurable Agent Identity and Behavior |
+| **Description** | Every agent has a stable name, role, template, objective, instructions, tone, permissions, context grants, and lifecycle state using the current management UI. |
+| **User Story** | As a user, I want each agent to behave like the collaborator I configured. |
+| **Acceptance Criteria** | 1. Current agent fields are stored per `agentId`. 2. Templates provide editable defaults. 3. Existing name, role, objective, instructions, tone, tool, and context controls persist correctly. 4. Tone does not change authorization or deterministic policy. 5. Responses and outputs clearly identify the agent. |
+| **Priority** | **MUST** |
 | **Dependencies** | F2, F10 |
+
+### F16 — Agent Management
+
+| Field | Value |
+|-------|-------|
+| **ID** | F16 |
+| **Name** | Create and Manage Multiple Agents |
+| **Description** | Users create multiple customized agents from templates or from scratch and manage their lifecycle independently from the existing dashboard. |
+| **User Story** | As a user, I want a personal roster of agents instead of one fixed assistant. |
+| **Acceptance Criteria** | 1. Create from template or blank configuration. 2. Multiple agents per user. 3. Switch, edit, duplicate, pause, and archive without affecting other agents. 4. Templates include Mentor and Designer; custom roles are supported. 5. Stable `agentId` is used across runs, messages, decisions, and outputs. |
+| **Priority** | **MUST** |
+| **Dependencies** | F1, F2 |
+
+### F17 — Concurrent Multi-Agent Runs
+
+| Field | Value |
+|-------|-------|
+| **ID** | F17 |
+| **Name** | Concurrent Run Orchestration |
+| **Description** | The runtime can execute independent assignments for multiple agents simultaneously while enforcing per-user limits and isolation. |
+| **User Story** | As a user, I want my specialists to make progress in parallel instead of waiting for one assistant to finish everything sequentially. |
+| **Acceptance Criteria** | 1. A user can start at least two agent runs concurrently. 2. Every run has owner, assignment, status, timestamps, and output references. 3. Failures and cancellation are isolated to one run. 4. Per-user concurrency and rate limits are enforced. 5. Status updates appear in real time. |
+| **Priority** | **MUST** |
+| **Dependencies** | F16 |
+
+### F18 — Context, Tools, and Handoffs
+
+| Field | Value |
+|-------|-------|
+| **ID** | F18 |
+| **Name** | Scoped Context and Collaboration |
+| **Description** | Agents receive only permitted tools and context. They collaborate through explicit shared artifacts and traceable handoffs rather than unrestricted hidden memory. |
+| **User Story** | As a user, I want agents to collaborate without mixing private context or losing accountability. |
+| **Acceptance Criteria** | 1. Tool and context permissions are stored per agent. 2. Workspace context is distinct from agent-private context. 3. Handoffs identify sender, receiver, purpose, and artifact. 4. Users can inspect and revoke access. 5. Tool calls and handoffs are auditable. |
+| **Priority** | **MUST** |
+| **Dependencies** | F16, F17 |
+
+### F19 — Run Timeline and Controls
+
+| Field | Value |
+|-------|-------|
+| **ID** | F19 |
+| **Name** | Multi-Agent Run Visibility |
+| **Description** | A unified timeline shows concurrent run progress, decisions, artifacts, failures, and requests for user input. |
+| **User Story** | As a user, I want to understand and control what all my agents are doing at the same time. |
+| **Acceptance Criteria** | 1. Timeline can be filtered by agent and status. 2. Users can pause or cancel active work. 3. Runs surface blockers and approval requests. 4. Outputs link back to the originating run. 5. No agent can impersonate another in the UI. |
+| **Priority** | **MUST** |
+| **Dependencies** | F11, F17 |
 
 ---
 
@@ -328,6 +427,9 @@ User wonders: "Why did the agent notify me about this but not that?"
 | NFR-5 | Data security | GitHub tokens in Secret Manager, not Firestore |
 | NFR-6 | Uptime during hackathon demo | 99%+ |
 | NFR-7 | Agent language | Auto-detect from user message |
+| NFR-8 | Concurrent agent runs | At least 2 per user for MVP |
+| NFR-9 | Run isolation | One agent failure must not terminate unrelated runs |
+| NFR-10 | Identity traceability | Every message, action, decision, and artifact carries `agentId` and `runId` |
 
 ---
 
@@ -348,11 +450,15 @@ User wonders: "Why did the agent notify me about this but not that?"
 - F11 Dashboard
 - F12 Notifications
 - F13 Settings
+- F15 Agent Identity and Customization
+- F16 Agent Management
+- F17 Concurrent Multi-Agent Runs
+- F18 Context, Tools, and Handoffs
+- F19 Run Timeline and Controls
 
 ### Should Have
 
 - F14 Decision Transparency UI
-- F15 Intensity Personas
 
 ### Out of Scope
 
@@ -365,6 +471,7 @@ User wonders: "Why did the agent notify me about this but not that?"
 - LeetCode integration
 - Custom notification schedules
 - Offline mode
+- Autonomous cross-agent delegation without user-configured permissions
 
 ---
 
@@ -377,6 +484,9 @@ User wonders: "Why did the agent notify me about this but not that?"
 - Custom opportunity sources
 - Team/group features
 - Notification schedule preferences
+- Community agent template marketplace
+- Shared human teams and organization workspaces
+- Advanced dependency graphs and autonomous multi-stage delegation
 
 ---
 
@@ -392,8 +502,10 @@ User wonders: "Why did the agent notify me about this but not that?"
 
 ### Demo Must Show
 
-- Complete user lifecycle (sign in → onboarding → activity → notification → conversation)
-- Agent making autonomous decisions (not just responding to queries)
+- Complete user lifecycle (sign in → create agents → switch/chat → assign work → inspect outputs)
+- At least two differently customized agents with isolated conversations
+- A proactive mentor agent reacting to developer activity
+- Clear agent identity, run ownership, and a visible handoff or shared artifact
 - Decision policy transparency ("why I notified / why I stayed silent")
 - Cross-channel interaction (same conversation on Telegram and web)
 - Google Cloud services in action (Cloud Run, Vertex AI, Pub/Sub)
@@ -409,7 +521,7 @@ User wonders: "Why did the agent notify me about this but not that?"
 
 ## 12. Hackathon Demo Requirements
 
-See [DEMO.md](file:///Users/macbook/Yernur/projects/Mark-I/docs/DEMO.md) for the complete demo script.
+See [DEMO.md](DEMO.md) for the complete demo script.
 
 Key constraints:
 - **4-minute video** maximum

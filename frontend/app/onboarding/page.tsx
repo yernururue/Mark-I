@@ -1,213 +1,236 @@
 "use client";
 
-import { useAuth } from "@/contexts/AuthContext";
+import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { db } from "@/lib/firebase";
-import { collection, addDoc } from "firebase/firestore";
-import { Bot, Zap, Cloud, Cpu, Sparkles, Code, Layout, Database, Plug } from "lucide-react";
+import RouteGuard from "@/components/RouteGuard";
+import { useAuth } from "@/contexts/AuthContext";
+import { getErrorMessage } from "@/lib/errors";
+import { agentsService } from "@/services/agents";
+import { userService } from "@/services/user";
+import type { CreateAgentInput, Intensity, OnboardingInput, PreferredLanguage } from "@/types/models";
 
-const ICONS = [
-  { id: "bot", icon: Bot, color: "bg-blue-500" },
-  { id: "zap", icon: Zap, color: "bg-yellow-500" },
-  { id: "cloud", icon: Cloud, color: "bg-cyan-500" },
-  { id: "cpu", icon: Cpu, color: "bg-purple-500" },
-  { id: "sparkles", icon: Sparkles, color: "bg-pink-500" },
-  { id: "code", icon: Code, color: "bg-green-500" },
-  { id: "layout", icon: Layout, color: "bg-orange-500" },
-  { id: "database", icon: Database, color: "bg-red-500" },
+const INTENSITIES: Array<{ value: Intensity; name: string; description: string }> = [
+  { value: "chill", name: "Chill", description: "Only surface high-significance updates." },
+  { value: "normal", name: "Normal", description: "Balance useful nudges with quiet observation." },
+  { value: "brutal", name: "Brutal", description: "Surface smaller gaps and use a more direct tone." },
 ];
 
-export default function Onboarding() {
-  const { user, loading } = useAuth();
+const TEMPLATES: Array<{
+  value: CreateAgentInput["template"];
+  name: string;
+  description: string;
+  defaults: Pick<CreateAgentInput, "name" | "role" | "objective" | "instructions" | "tone" | "toolGrants" | "contextGrants">;
+}> = [
+  {
+    value: "mentor",
+    name: "Mentor",
+    description: "Observe development activity, track growth, and provide focused guidance.",
+    defaults: {
+      name: "Code mentor",
+      role: "mentor",
+      objective: "Help me make measurable progress toward my workspace goal.",
+      instructions: "Use evidence from my work, explain tradeoffs, and recommend one clear next action.",
+      tone: "normal",
+      toolGrants: ["read_workspace", "query_github", "publish_artifact"],
+      contextGrants: ["workspace-goal", "github-activity"],
+    },
+  },
+  {
+    value: "designer",
+    name: "Designer",
+    description: "Develop product and interface directions with explicit tradeoffs.",
+    defaults: {
+      name: "Product designer",
+      role: "designer",
+      objective: "Improve the product experience and make complex flows understandable.",
+      instructions: "Explore strong directions, explain tradeoffs, and publish reviewable design artifacts.",
+      tone: "concise",
+      toolGrants: ["read_workspace", "publish_artifact"],
+      contextGrants: ["workspace-goal"],
+    },
+  },
+  {
+    value: "custom",
+    name: "Custom",
+    description: "Define a specialist role, objective, instructions, and access from scratch.",
+    defaults: {
+      name: "Research agent",
+      role: "researcher",
+      objective: "Gather evidence for decisions in this workspace.",
+      instructions: "Use only permitted context, cite assumptions, and publish a concise report.",
+      tone: "concise",
+      toolGrants: ["read_workspace", "publish_artifact"],
+      contextGrants: ["workspace-goal"],
+    },
+  },
+];
+
+const LANGUAGES: Array<{ value: PreferredLanguage; name: string }> = [
+  { value: "en", name: "English" },
+  { value: "ru", name: "Русский" },
+  { value: "kk", name: "Қазақша" },
+];
+
+function OnboardingContent() {
+  const { user } = useAuth();
   const router = useRouter();
-  
+  const profileCreated = useRef(false);
   const [step, setStep] = useState(0);
-  const [agentName, setAgentName] = useState("");
-  const [selectedIconId, setSelectedIconId] = useState("bot");
+  const [goal, setGoal] = useState("");
+  const [intensity, setIntensity] = useState<Intensity>("normal");
+  const [language, setLanguage] = useState<PreferredLanguage>("en");
+  const [agent, setAgent] = useState<CreateAgentInput>({
+    template: "mentor",
+    ...TEMPLATES[0].defaults,
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push("/");
-    }
-  }, [user, loading, router]);
+  const chooseTemplate = (template: CreateAgentInput["template"]) => {
+    const selected = TEMPLATES.find((item) => item.value === template) ?? TEMPLATES[0];
+    setAgent({ template, ...selected.defaults });
+    setError(null);
+  };
 
-  const handleCreateAgent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!agentName.trim()) {
-      setError("Please enter a name for your agent.");
+  const nextStep = () => {
+    if (step === 0 && goal.trim().length < 10) {
+      setError("Describe a concrete workspace goal in at least ten characters.");
+      return;
+    }
+    setError(null);
+    setStep((current) => Math.min(current + 1, 3));
+  };
+
+  const previousStep = () => {
+    setError(null);
+    setStep((current) => Math.max(current - 1, 0));
+  };
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!user || submitting) return;
+    if (agent.name.trim().length < 2 || agent.objective.trim().length < 10 || agent.instructions.trim().length < 10) {
+      setError("Add an agent name, objective, and clear instructions before continuing.");
       return;
     }
 
+    const profileInput: OnboardingInput = { goal: goal.trim(), intensity, language };
+    const agentInput: CreateAgentInput = {
+      ...agent,
+      name: agent.name.trim(),
+      role: agent.role.trim(),
+      objective: agent.objective.trim(),
+      instructions: agent.instructions.trim(),
+    };
     setSubmitting(true);
     setError(null);
-    
+
     try {
-      const selectedIcon = ICONS.find(i => i.id === selectedIconId) || ICONS[0];
-      
-      // Fire and forget - Firestore handles local optimistic updates instantly
-      addDoc(collection(db, 'users', user!.uid, 'agents'), {
-        name: agentName.trim(),
-        icon: selectedIcon.id,
-        color: selectedIcon.color,
-        timestamp: new Date().toISOString()
-      }).catch(err => console.error("Firestore save error:", err));
-      
-      router.push("/dashboard");
-    } catch (err: any) {
-      setError(err.message || "Failed to create agent");
+      if (!profileCreated.current) {
+        await userService.submitOnboarding(user.uid, profileInput, {
+          displayName: user.displayName,
+          email: user.email,
+        });
+        profileCreated.current = true;
+      }
+      await agentsService.createAgent(user.uid, agentInput);
+      router.replace("/dashboard");
+    } catch (submissionError) {
+      setError(getErrorMessage(submissionError, "Your workspace setup could not be saved. Please try again."));
       setSubmitting(false);
     }
   };
 
-  if (loading || !user) {
-    return <div className="min-h-screen bg-[#0A0A0A]"></div>;
-  }
-
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
-      {/* Background gradients for visual depth */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+    <main className="onboarding-page">
+      <div className="onboarding-frame">
+        <header className="onboarding-header">
+          <span className="onboarding-brand">Mark-I</span>
+          <span>Step {step + 1} of 4</span>
+        </header>
 
-      <div className="max-w-xl w-full bg-[#161616] border border-white/5 p-8 rounded-3xl shadow-2xl relative z-10 transition-all duration-500 min-h-[420px] flex flex-col justify-center">
-        
-        {step === 0 && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <h1 className="text-3xl font-medium tracking-tight mb-4">Welcome to Mark-I.</h1>
-            <p className="text-white/60 leading-relaxed mb-8 text-[15px]">
-              You've just stepped into the future of autonomous workflows. Let's set up your very first AI teammate—an agent you can give real work to.
-            </p>
-            <button 
-              onClick={() => setStep(1)}
-              className="bg-white text-black hover:bg-gray-200 px-6 py-3 rounded-full font-medium transition-colors w-full flex justify-center items-center gap-2"
-            >
-              Continue <span className="text-xl leading-none">&rarr;</span>
-            </button>
+        <div className="onboarding-progress" aria-label={`Step ${step + 1} of 4`}>
+          {[0, 1, 2, 3].map((index) => <span key={index} data-active={index <= step} />)}
+        </div>
+
+        <form className="onboarding-form" onSubmit={submit}>
+          {step === 0 ? (
+            <section className="onboarding-step" aria-labelledby="goal-title">
+              <h1 id="goal-title">What should this workspace help you accomplish?</h1>
+              <p>Agents may have separate objectives, but this gives the whole workspace a shared direction.</p>
+              <label className="field">
+                <span>Goal</span>
+                <textarea value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="For example: ship and validate our developer tool MVP" rows={4} maxLength={280} autoFocus />
+                <span className="field__hint">{goal.length}/280 characters</span>
+              </label>
+            </section>
+          ) : null}
+
+          {step === 1 ? (
+            <section className="onboarding-step" aria-labelledby="defaults-title">
+              <h1 id="defaults-title">Set workspace defaults</h1>
+              <p>These defaults can be overridden for each agent.</p>
+              <fieldset className="choice-list">
+                <legend>Default notification behavior</legend>
+                {INTENSITIES.map((option) => (
+                  <label key={option.value} className="choice-row">
+                    <input type="radio" name="intensity" checked={intensity === option.value} onChange={() => setIntensity(option.value)} />
+                    <span><strong>{option.name}</strong><small>{option.description}</small></span>
+                  </label>
+                ))}
+              </fieldset>
+              <label className="field">
+                <span>Preferred language</span>
+                <select value={language} onChange={(event) => setLanguage(event.target.value as PreferredLanguage)}>
+                  {LANGUAGES.map((option) => <option key={option.value} value={option.value}>{option.name}</option>)}
+                </select>
+              </label>
+            </section>
+          ) : null}
+
+          {step === 2 ? (
+            <section className="onboarding-step" aria-labelledby="template-title">
+              <h1 id="template-title">Create your first agent</h1>
+              <p>Templates provide editable defaults. They do not lock the agent into a separate product path.</p>
+              <fieldset className="template-grid">
+                <legend className="sr-only">Agent template</legend>
+                {TEMPLATES.map((template) => (
+                  <label key={template.value} className="template-option">
+                    <input type="radio" name="template" checked={agent.template === template.value} onChange={() => chooseTemplate(template.value)} />
+                    <strong>{template.name}</strong>
+                    <span>{template.description}</span>
+                  </label>
+                ))}
+              </fieldset>
+            </section>
+          ) : null}
+
+          {step === 3 ? (
+            <section className="onboarding-step" aria-labelledby="agent-title">
+              <h1 id="agent-title">Configure {agent.name}</h1>
+              <p>Identity, scope, and instructions stay attached to this agent across chat, runs, and outputs.</p>
+              <div className="settings-fields">
+                <label className="field"><span>Agent name</span><input value={agent.name} onChange={(event) => setAgent((current) => ({ ...current, name: event.target.value }))} /></label>
+                <label className="field"><span>Role</span><input value={agent.role} onChange={(event) => setAgent((current) => ({ ...current, role: event.target.value }))} /></label>
+              </div>
+              <label className="field"><span>Objective</span><textarea rows={2} value={agent.objective} onChange={(event) => setAgent((current) => ({ ...current, objective: event.target.value }))} /></label>
+              <label className="field"><span>Instructions</span><textarea rows={3} value={agent.instructions} onChange={(event) => setAgent((current) => ({ ...current, instructions: event.target.value }))} /></label>
+              <label className="field"><span>Tone</span><select value={agent.tone} onChange={(event) => setAgent((current) => ({ ...current, tone: event.target.value as CreateAgentInput["tone"] }))}><option value="normal">Normal</option><option value="chill">Chill</option><option value="brutal">Brutal</option><option value="concise">Concise</option></select></label>
+              <div className="grant-summary"><span>Tools</span><strong>{agent.toolGrants.join(", ") || "None"}</strong><span>Context</span><strong>{agent.contextGrants.join(", ") || "None"}</strong></div>
+            </section>
+          ) : null}
+
+          {error ? <p className="form-message form-message--error" role="alert">{error}</p> : null}
+          <div className="onboarding-actions">
+            {step > 0 ? <button type="button" className="button button--secondary" onClick={previousStep} disabled={submitting}>Back</button> : <span />}
+            {step < 3 ? <button type="button" className="button button--primary" onClick={nextStep}>Continue</button> : <button type="submit" className="button button--primary" disabled={submitting}>{submitting ? "Creating workspace…" : "Create workspace"}</button>}
           </div>
-        )}
-
-        {step === 1 && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <h1 className="text-2xl font-medium tracking-tight mb-4">What can your Agent do?</h1>
-            <div className="space-y-4 mb-8">
-              <div className="flex gap-4 items-start bg-white/5 p-4 rounded-2xl">
-                <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0 mt-1">
-                  <Bot className="w-5 h-5 text-blue-400" />
-                </div>
-                <div>
-                  <h3 className="font-medium text-white/90">Autonomous Execution</h3>
-                  <p className="text-sm text-white/50 mt-1 leading-relaxed">Agents can browse the web, write code, and execute multi-step plans without supervision.</p>
-                </div>
-              </div>
-              
-              <div className="flex gap-4 items-start bg-white/5 p-4 rounded-2xl">
-                <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center flex-shrink-0 mt-1">
-                  <Plug className="w-5 h-5 text-purple-400" />
-                </div>
-                <div>
-                  <h3 className="font-medium text-white/90">MCP Connectivity</h3>
-                  <p className="text-sm text-white/50 mt-1 leading-relaxed">Use the Model Context Protocol (MCP) to seamlessly connect your internal APIs, databases, and tools directly to your agent's brain.</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button 
-                onClick={() => setStep(0)}
-                className="bg-white/5 text-white/80 hover:bg-white/10 px-6 py-3 rounded-full font-medium transition-colors w-1/3"
-              >
-                Back
-              </button>
-              <button 
-                onClick={() => setStep(2)}
-                className="bg-white text-black hover:bg-gray-200 px-6 py-3 rounded-full font-medium transition-colors w-2/3"
-              >
-                Let's Build One
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <h1 className="text-2xl font-medium tracking-tight mb-6 text-center">Design Your First Agent</h1>
-            
-            <form onSubmit={handleCreateAgent} className="space-y-6">
-              
-              <div>
-                <label className="block text-sm font-medium text-white/70 mb-2">Agent Name</label>
-                <input 
-                  type="text"
-                  value={agentName}
-                  onChange={(e) => setAgentName(e.target.value)}
-                  placeholder="e.g. Deck Designer, Code Reviewer..."
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30 transition-colors"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-white/70 mb-2">Choose an Icon</label>
-                <div className="grid grid-cols-4 gap-3">
-                  {ICONS.map((item) => {
-                    const IconComp = item.icon;
-                    const isSelected = selectedIconId === item.id;
-                    return (
-                      <div 
-                        key={item.id}
-                        onClick={() => setSelectedIconId(item.id)}
-                        className={`cursor-pointer aspect-square rounded-2xl flex items-center justify-center transition-all ${
-                          isSelected ? 'bg-white/10 ring-2 ring-white scale-95 shadow-inner' : 'bg-white/5 hover:bg-white/10'
-                        }`}
-                      >
-                        <div className={`w-10 h-10 rounded-full ${item.color} flex items-center justify-center shadow-lg`}>
-                          <IconComp className="w-5 h-5 text-white" />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {error && <p className="text-red-400 text-sm">{error}</p>}
-
-              <div className="flex gap-3 pt-2">
-                <button 
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="bg-white/5 text-white/80 hover:bg-white/10 px-6 py-3 rounded-full font-medium transition-colors w-1/3"
-                >
-                  Back
-                </button>
-                <button 
-                  type="submit"
-                  disabled={submitting}
-                  className="bg-white text-black hover:bg-gray-200 disabled:opacity-50 px-6 py-3 rounded-full font-medium transition-colors w-2/3 flex items-center justify-center gap-2"
-                >
-                  {submitting ? "Initializing..." : "Start Chatting"}
-                </button>
-              </div>
-
-            </form>
-          </div>
-        )}
-        
+        </form>
       </div>
-      
-      {/* Progress indicators */}
-      <div className="flex gap-2 mt-8 z-10">
-        {[0, 1, 2].map((i) => (
-          <div 
-            key={i} 
-            className={`h-1.5 rounded-full transition-all duration-300 ${
-              step === i ? "w-8 bg-white" : "w-2 bg-white/20"
-            }`}
-          />
-        ))}
-      </div>
-
-    </div>
+    </main>
   );
+}
+
+export default function OnboardingPage() {
+  return <RouteGuard mode="onboarding"><OnboardingContent /></RouteGuard>;
 }

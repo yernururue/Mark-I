@@ -9,8 +9,8 @@ areas:
 
   frontend:
     status: in-progress
-    current_plan: frontend-mvp
-    notes: "Plan created 2026-08-23, 6 tasks (01, 03 done; 04 in progress)."
+    current_plan: frontend-product-readiness
+    notes: "Frontend review completed 2026-08-29 for Multiple Customizable Agents. Dashboard UI is frozen; next work is dead-code cleanup, repository hygiene, validated agent models, atomic onboarding, isolated conversations, and backend integration behind the current interface."
 
 integration:
   status: planned
@@ -22,5 +22,9 @@ plans:
     created: 2026-08-21
   - name: frontend-mvp
     area: frontend
-    status: in-progress
+    status: shipped
     created: 2026-08-23
+  - name: frontend-product-readiness
+    area: frontend
+    status: in-progress
+    created: 2026-08-29

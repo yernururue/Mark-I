@@ -1,7 +1,7 @@
 # Mark-I — Architecture Document
 
-> **Status:** Draft v1.0  
-> **Last updated:** 2026-08-19
+> **Status:** Draft v1.1  
+> **Last updated:** 2026-08-29
 
 ---
 
@@ -24,6 +24,8 @@ graph TB
         API["FastAPI<br/>API Routes"]
         WH["Webhook<br/>Handlers"]
         CHAT_SVC["Chat<br/>Service"]
+        ROUTER["Agent<br/>Router"]
+        ORCH["Run<br/>Orchestrator"]
         DECISION["Decision<br/>Policy Engine"]
         GH_SVC["GitHub<br/>Service"]
         TG_SVC["Telegram<br/>Service"]
@@ -31,7 +33,10 @@ graph TB
     end
 
     subgraph "AI Layer"
-        ADK["ADK Agent"]
+        RUNTIME["Configurable<br/>Agent Runtime"]
+        A1["Mentor Agent<br/>Run"]
+        A2["Designer Agent<br/>Run"]
+        AN["Custom Agent<br/>Run"]
         GEMINI["Gemini API<br/>(Vertex AI)"]
     end
 
@@ -55,6 +60,7 @@ graph TB
 
     %% API → Services
     API --> CHAT_SVC
+    API --> ORCH
     API --> GH_SVC
     API --> TG_SVC
 
@@ -70,11 +76,18 @@ graph TB
     %% Scheduler
     SCHED -->|"Trigger"| PUBSUB
 
-    %% Services → AI
-    CHAT_SVC --> ADK
-    GH_SVC --> ADK
-    OPP_SVC --> ADK
-    ADK --> GEMINI
+    %% Routing and concurrent agent runs
+    CHAT_SVC --> ROUTER
+    GH_SVC --> ROUTER
+    OPP_SVC --> ROUTER
+    ROUTER --> ORCH
+    ORCH --> RUNTIME
+    RUNTIME --> A1
+    RUNTIME --> A2
+    RUNTIME --> AN
+    A1 --> GEMINI
+    A2 --> GEMINI
+    AN --> GEMINI
 
     %% Services → Decision
     GH_SVC --> DECISION
@@ -90,6 +103,8 @@ graph TB
     CHAT_SVC --> FS
     DECISION --> FS
     OPP_SVC --> FS
+    ORCH --> FS
+    RUNTIME --> FS
 
     %% Secrets
     GH_SVC -->|"Token"| SM
@@ -138,7 +153,8 @@ sequenceDiagram
     participant WH as Webhook Handler
     participant PS as Pub/Sub
     participant W as GitHub Worker
-    participant AI as ADK + Gemini
+    participant R as Agent Router
+    participant AI as Mentor Agent + Gemini
     participant DP as Decision Policy
     participant FS as Firestore
     participant TG as Telegram API
@@ -153,7 +169,9 @@ sequenceDiagram
     W->>W: Double-check dedup
     W->>FS: Load user context
     W->>GH: Fetch diff/content (if needed)
-    W->>AI: Analyze activity
+    W->>R: Resolve subscribed agent
+    R-->>W: Mentor agentId + grants
+    W->>AI: Analyze activity<br/>(agentId + runId)
     AI-->>W: Structured analysis<br/>(concept, proficiency, significance)
     W->>FS: Create observation
     W->>FS: Update skill scores
@@ -179,7 +197,8 @@ sequenceDiagram
     participant PS as Pub/Sub
     participant OW as Opportunity Worker
     participant SRC as Opportunity Sources
-    participant AI as ADK + Gemini
+    participant R as Agent Router
+    participant AI as Selected Agent + Gemini
     participant DP as Decision Policy
     participant FS as Firestore
     participant TG as Telegram API
@@ -191,8 +210,10 @@ sequenceDiagram
     SRC-->>OW: Content items
 
     loop For each user
-        OW->>FS: Load user (goal, skills)
-        OW->>AI: Evaluate relevance<br/>(items + user context)
+        OW->>R: Resolve authorized discovery agent(s)
+        R-->>OW: agentId + grants
+        OW->>FS: Load permitted agent/workspace context
+        OW->>AI: Evaluate relevance<br/>(agentId + runId)
         AI-->>OW: Relevance scores
 
         loop For each relevant item
@@ -211,7 +232,7 @@ sequenceDiagram
 
 ---
 
-## 5. Unified Chat Flow
+## 5. Unified Multi-Agent Chat Flow
 
 ```mermaid
 sequenceDiagram
@@ -219,17 +240,20 @@ sequenceDiagram
     participant CH as Channel (Web/Telegram)
     participant API as Chat Service
     participant FS as Firestore
-    participant ADK as ADK Agent
+    participant RT as Agent Router
+    participant ADK as Selected Agent Runtime
     participant GEM as Gemini
 
     U->>CH: Send message
     CH->>API: Message + channel info
-    API->>FS: Load user context<br/>(profile, skills, observations)
+    API->>RT: Resolve addressed agent(s)
+    RT-->>API: agentId(s) + authorization grants
+    API->>FS: Load permitted agent and workspace context
     API->>FS: Store user message
-    API->>ADK: Message + full context
+    API->>ADK: Message + scoped context<br/>(agentId + runId)
     ADK->>GEM: Reason with context
     GEM-->>ADK: Response
-    ADK-->>API: Agent response
+    ADK-->>API: Identified agent response
     API->>FS: Store agent message
     
     alt Channel = Web
@@ -243,21 +267,52 @@ sequenceDiagram
 
 ---
 
-## 6. Ownership Map
+## 6. Concurrent Agent Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as Backend API
+    participant O as Run Orchestrator
+    participant PS as Pub/Sub
+    participant A1 as Research Agent Worker
+    participant A2 as Designer Agent Worker
+    participant FS as Firestore
+
+    U->>API: Assign two tasks to two agents
+    API->>O: Create agent runs
+    O->>FS: Persist queued run records
+    par Research run
+        O->>PS: Dispatch research run
+        PS->>A1: Execute with agent config + grants
+        A1->>FS: Publish progress and artifact
+    and Design run
+        O->>PS: Dispatch design run
+        PS->>A2: Execute with agent config + grants
+        A2->>FS: Publish progress and artifact
+    end
+    FS-->>U: Realtime statuses and outputs
+```
+
+Each run is isolated by `uid`, `agentId`, and `runId`. Agents share work only through explicit workspace artifacts or recorded handoffs.
+
+---
+
+## 7. Ownership Map
 
 ### Frontend Owns
 
 | Area | Details |
 |------|---------|
-| **UI/UX** | All visual components, layouts, styling |
+| **UI/UX** | Preserve the approved frontend and make only correctness or backend-connection changes behind it |
 | **Firebase Auth (client)** | Sign-in flow, token management, provider setup |
-| **Routing** | `/`, `/login`, `/onboarding`, `/dashboard`, `/chat`, `/settings` |
-| **Dashboard** | Skill visualization, observation feed, decision log |
+| **Routing** | `/`, `/login`, `/onboarding`, `/dashboard`, `/agents`, `/runs/[runId]`, `/chat`, `/settings` |
+| **Dashboard** | Preserve the existing shell, agent roster, chat canvas, navigation, layout, and styling; connect current controls to backend data |
 | **Chat Widget** | Chat UI, message display, input handling |
 | **Settings UI** | Profile form, integration toggles, link code display |
 | **Firestore Listeners** | Realtime subscriptions for user data |
 | **GitHub OAuth Redirect** | Initiate OAuth flow, handle callback redirect |
-| **Responsive Design** | Mobile/tablet/desktop layouts |
+| **Responsive Behavior** | Preserve and validate the current mobile/tablet/desktop behavior without redesigning it |
 
 ### Backend Owns
 
@@ -266,7 +321,9 @@ sequenceDiagram
 | **Auth Verification** | Firebase ID token validation on every request |
 | **All Firestore Writes** | User profiles, observations, messages, decisions |
 | **Business Logic** | Decision policy, skill update formula, event processing |
-| **AI/Agent** | ADK agent setup, Gemini calls, tool definitions, prompts |
+| **AI/Agents** | Runtime construction from agent configs, Gemini calls, tool grants, prompts |
+| **Run Orchestration** | Routing, concurrency limits, lifecycle state, cancellation, retry isolation |
+| **Agent Collaboration** | Shared artifact references and auditable agent-to-agent handoffs |
 | **GitHub Integration** | OAuth token exchange, webhook registration, API calls |
 | **Telegram Integration** | Bot commands, message sending, webhook handling |
 | **Webhook Processing** | GitHub event validation, Telegram update parsing |
@@ -286,7 +343,7 @@ sequenceDiagram
 
 ---
 
-## 7. Deployment Architecture
+## 8. Deployment Architecture
 
 ```mermaid
 graph LR
@@ -331,7 +388,7 @@ graph LR
 
 ---
 
-## 8. Technology Stack Summary
+## 9. Technology Stack Summary
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
@@ -344,7 +401,7 @@ graph LR
 | Backend Language | Python 3.11+ | Backend implementation |
 | Backend Runtime | Cloud Run | Managed container hosting |
 | Database | Cloud Firestore | NoSQL document database |
-| AI Framework | Google ADK | Agent orchestration |
+| AI Framework | Google ADK | Configurable agent runtime and tool orchestration |
 | LLM | Gemini (Vertex AI) | Natural language understanding |
 | Message Queue | Cloud Pub/Sub | Async event processing |
 | Scheduler | Cloud Scheduler | Cron-like job scheduling |

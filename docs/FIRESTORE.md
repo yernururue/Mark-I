@@ -1,7 +1,7 @@
 # Mark-I — Firestore Schema
 
-> **Status:** Draft v1.0  
-> **Last updated:** 2026-08-19  
+> **Status:** Draft v1.1  
+> **Last updated:** 2026-08-29  
 > **This document is the database contract between frontend and backend.**
 
 ---
@@ -17,6 +17,8 @@ Firestore is the primary database. All writes go through the backend (Firebase A
 3. **No secrets in Firestore** — GitHub tokens, API keys stored in Secret Manager
 4. **User data isolation** — All user data nested under `users/{uid}`
 5. **Timestamps** — All timestamps stored as Firestore Timestamps (ISO 8601 in API responses)
+6. **Agent attribution** — Agent actions and outputs carry both `agentId` and `runId`
+7. **Scoped collaboration** — Agents share outputs by artifact reference or recorded handoff, not unrestricted memory
 
 ---
 
@@ -31,7 +33,7 @@ Root user document. Contains profile data and current skill snapshot.
 | `uid` | string | yes | — | Firebase Auth UID (same as document ID) |
 | `email` | string | yes | — | User's email from Firebase Auth |
 | `displayName` | string | yes | — | User's display name |
-| `goal` | string | yes | — | Learning goal: `"job"`, `"leetcode"`, `"stack:<name>"` |
+| `goal` | string | yes | — | User's workspace goal; mentor templates may interpret developer-specific goal values |
 | `intensity` | string | yes | `"normal"` | Notification intensity: `"chill"`, `"normal"`, `"brutal"` |
 | `language` | string | no | `"en"` | Preferred language: `"en"`, `"ru"` |
 | `telegramUserId` | number \| null | no | `null` | Telegram user ID (set after linking) |
@@ -94,6 +96,63 @@ Root user document. Contains profile data and current skill snapshot.
 
 ---
 
+### `users/{uid}/agents/{agentId}`
+
+Stores each user-created agent independently.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `id` | string | yes | — | Stable agent ID |
+| `name` | string | yes | — | User-visible agent name |
+| `role` | string | yes | — | Specialist role such as `mentor`, `designer`, or a custom value |
+| `template` | string | yes | `custom` | Editable starter template |
+| `objective` | string | yes | — | Agent-specific objective |
+| `instructions` | string | yes | — | User-authored behavior instructions |
+| `tone` | string | no | `normal` | Communication preference |
+| `toolGrants` | array\<string\> | no | `[]` | Tools/integrations this agent may use |
+| `contextGrants` | array\<string\> | no | `[]` | Workspace sources this agent may read |
+| `notificationPolicy` | map | no | `{}` | Agent-specific notification behavior |
+| `status` | string | yes | `active` | `active`, `paused`, or `archived` |
+| `createdAt` | timestamp | yes | — | Creation time |
+| `updatedAt` | timestamp | yes | — | Last configuration update |
+
+---
+
+### `users/{uid}/runs/{runId}`
+
+Durable lifecycle record for one assignment executed by one agent.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `id` | string | yes | — | Stable run ID |
+| `agentId` | string | yes | — | Owning agent |
+| `assignment` | string | yes | — | Requested work |
+| `status` | string | yes | `queued` | `queued`, `running`, `waiting-for-user`, `completed`, `failed`, or `cancelled` |
+| `progress` | string \| null | no | `null` | Latest user-visible progress summary |
+| `artifactIds` | array\<string\> | no | `[]` | Outputs produced by this run |
+| `parentRunId` | string \| null | no | `null` | Source run when created by an approved handoff |
+| `error` | map \| null | no | `null` | Structured failure details |
+| `createdAt` | timestamp | yes | — | Queue time |
+| `startedAt` | timestamp \| null | no | `null` | Execution start time |
+| `finishedAt` | timestamp \| null | no | `null` | Terminal-state time |
+
+---
+
+### `users/{uid}/artifacts/{artifactId}`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `id` | string | yes | — | Artifact ID |
+| `agentId` | string | yes | — | Producing agent |
+| `runId` | string | yes | — | Producing run |
+| `type` | string | yes | — | Output type such as `report`, `design`, `plan`, or `code-reference` |
+| `title` | string | yes | — | User-visible title |
+| `content` | string \| map | yes | — | Inline content or storage reference |
+| `sharedWithAgentIds` | array\<string\> | no | `[]` | Agents explicitly permitted to read it |
+| `createdAt` | timestamp | yes | — | Creation time |
+
+---
+
 ### `users/{uid}/observations/{obsId}`
 
 Observations are the core data entity — every meaningful event produces an observation.
@@ -101,6 +160,8 @@ Observations are the core data entity — every meaningful event produces an obs
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `id` | string | yes | — | Auto-generated document ID |
+| `agentId` | string | yes | — | Agent responsible for this observation |
+| `runId` | string \| null | no | `null` | Originating run when applicable |
 | `source` | string | yes | — | `"github"`, `"opportunity"`, `"chat"` |
 | `summary` | string | yes | — | Human-readable summary of the observation |
 | `concept` | string | yes | — | Primary concept/skill observed (e.g., `"recursion"`) |
@@ -177,6 +238,8 @@ Chat messages from both user and agent, across all channels.
 |-------|------|----------|---------|-------------|
 | `id` | string | yes | — | Auto-generated document ID |
 | `role` | string | yes | — | `"user"`, `"agent"` |
+| `agentId` | string \| null | no | `null` | Addressed/responding agent; null only for unassigned user messages |
+| `runId` | string \| null | no | `null` | Associated run |
 | `channel` | string | yes | — | `"telegram"`, `"web"` |
 | `text` | string | yes | — | Message text content |
 | `createdAt` | timestamp | yes | — | When the message was sent |
@@ -209,6 +272,8 @@ Decision log — records every decision the policy engine makes.
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `id` | string | yes | — | Auto-generated document ID |
+| `agentId` | string | yes | — | Agent whose activity was evaluated |
+| `runId` | string \| null | no | `null` | Originating run when applicable |
 | `observationId` | string | yes | — | Reference to the triggering observation |
 | `action` | string | yes | — | `"notified"`, `"silent"` |
 | `significanceScore` | number | yes | — | Score from the observation |
@@ -239,6 +304,22 @@ Decision log — records every decision the policy engine makes.
 
 **Indexes:**
 - Default: `createdAt` (descending) — for recent decisions view
+
+---
+
+### `users/{uid}/handoffs/{handoffId}`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `id` | string | yes | — | Handoff ID |
+| `fromAgentId` | string | yes | — | Requesting agent |
+| `toAgentId` | string | yes | — | Receiving agent |
+| `sourceRunId` | string | yes | — | Run that requested the handoff |
+| `targetRunId` | string \| null | no | `null` | Created run after approval |
+| `purpose` | string | yes | — | Explicit requested work |
+| `artifactIds` | array\<string\> | no | `[]` | Shared inputs |
+| `status` | string | yes | `proposed` | `proposed`, `approved`, `rejected`, or `completed` |
+| `createdAt` | timestamp | yes | — | Creation time |
 
 ---
 
@@ -325,6 +406,26 @@ service cloud.firestore {
         allow read: if request.auth != null && request.auth.uid == uid;
         allow write: if false;
       }
+
+      match /agents/{agentId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+
+      match /runs/{runId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+
+      match /artifacts/{artifactId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+
+      match /handoffs/{handoffId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
     }
     
     // Processed events — backend only, no client access
@@ -342,6 +443,10 @@ service cloud.firestore {
 | Collection | Owner | Frontend Read | Frontend Write | Purpose |
 |-----------|-------|---------------|----------------|---------|
 | `users/{uid}` | Backend | ✅ Realtime listener | ❌ | User profile + skills |
+| `users/{uid}/agents/{agentId}` | Backend | ✅ Realtime listener | ❌ | Agent configuration and grants |
+| `users/{uid}/runs/{runId}` | Backend | ✅ Realtime listener | ❌ | Concurrent run lifecycle |
+| `users/{uid}/artifacts/{artifactId}` | Backend | ✅ Realtime listener | ❌ | Agent outputs |
+| `users/{uid}/handoffs/{handoffId}` | Backend | ✅ Realtime listener | ❌ | Auditable agent collaboration |
 | `users/{uid}/observations/{obsId}` | Backend | ✅ Realtime listener | ❌ | Observation feed |
 | `users/{uid}/messages/{msgId}` | Backend | ✅ Realtime listener | ❌ | Chat history |
 | `users/{uid}/decisions/{decisionId}` | Backend | ✅ Realtime listener | ❌ | Decision log |

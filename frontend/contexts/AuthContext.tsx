@@ -34,11 +34,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const signOut = async () => {
-    try {
-      await firebaseSignOut(auth);
-    } catch (error) {
-      console.error('Failed to sign out', error);
-    }
+    await firebaseSignOut(auth);
   };
 
   const getToken = async () => {

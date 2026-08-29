@@ -1,5 +1,7 @@
 # Frontend MVP Plan
 
+> **Historical plan — superseded.** This records the original MVP direction and must not be used to authorize new dashboard UI. The current dashboard is approved and visually frozen. Follow [`../2026-08-29-frontend-product-readiness/plan.md`](../2026-08-29-frontend-product-readiness/plan.md) for all future frontend work.
+
 ## Goal
 Build the frontend MVP for Mark-I, fulfilling the PRD and TRD requirements.
 
