@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Square } from "lucide-react";
-import AppShell from "@/components/AppShell";
 import RouteGuard from "@/components/RouteGuard";
 import RouteState from "@/components/RouteState";
+import DashboardShell from "@/components/dashboard/DashboardShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { runsService } from "@/services/runs";
@@ -24,8 +24,9 @@ function RunContent() {
   const canCancel = run.status === "queued" || run.status === "running" || run.status === "waiting-for-user";
 
   return (
-    <div className="page-content run-page">
-      <Link href={agent ? `/agents/${agent.id}` : "/dashboard"} className="back-link"><ArrowLeft size={15} />{agent ? agent.name : "Workspace"}</Link>
+    <DashboardShell agents={agents} selectedAgentId={agent?.id}>
+      <div className="page-content run-page">
+      <Link href={agent ? `/agents/${agent.id}` : "/dashboard"} className="back-link"><ArrowLeft size={15} />{agent ? agent.name : "Dashboard"}</Link>
       <header className="page-header"><div><h1>{run.assignment}</h1><p>Owned by {agent?.name ?? "Unknown agent"}</p></div><em className="run-status" data-status={run.status}>{run.status}</em></header>
       {canCancel && user ? <button type="button" className="button button--danger" onClick={() => void runsService.cancelRun(user.uid, run.id)}><Square size={14} />Cancel run</button> : null}
 
@@ -39,10 +40,11 @@ function RunContent() {
       </section>
 
       <section className="settings-section"><div className="settings-section__heading"><h2>Outputs</h2><p>Every artifact remains attributed to this run and agent.</p></div>{outputs.length === 0 ? <p className="list-empty">No outputs have been published yet.</p> : outputs.map((artifact) => <article key={artifact.id} className="run-output"><span>{artifact.type}</span><h3>{artifact.title}</h3><p>{artifact.content}</p></article>)}</section>
-    </div>
+      </div>
+    </DashboardShell>
   );
 }
 
 export default function RunPage() {
-  return <RouteGuard><AppShell><RunContent /></AppShell></RouteGuard>;
+  return <RouteGuard><RunContent /></RouteGuard>;
 }

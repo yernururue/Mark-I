@@ -1,16 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, GitBranch, Send } from "lucide-react";
-import AppShell from "@/components/AppShell";
+import { Check, Copy, GitBranch, Plug, Send, Settings2 } from "lucide-react";
 import RouteGuard from "@/components/RouteGuard";
 import RouteState from "@/components/RouteState";
 import ProfileSettingsForm from "@/components/settings/ProfileSettingsForm";
+import SettingsScaffold from "@/components/settings/SettingsScaffold";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/hooks/useSettings";
 import { appConfig } from "@/lib/config";
 
-function SettingsContent() {
+const SETTINGS_NAV = [
+  { id: "general", label: "General", icon: Settings2 },
+  { id: "integrations", label: "Integrations", icon: Plug },
+];
+
+function SettingsPanel() {
   const { user } = useAuth();
   const {
     profile,
@@ -48,34 +53,27 @@ function SettingsContent() {
   };
 
   return (
-    <div className="page-content settings-page">
-      <header className="page-header">
-        <div>
-          <h1>Settings</h1>
-          <p>Manage workspace defaults and connected services.</p>
-        </div>
-      </header>
-
+    <>
+    <SettingsScaffold title="General Settings" items={SETTINGS_NAV} closeHref="/dashboard">
       {error ? <p className="form-message form-message--error" role="alert">{error}</p> : null}
-      {notice ? <p className="form-message form-message--success" role="status">{notice}</p> : null}
 
-      <ProfileSettingsForm profile={profile} saving={saving} onSave={saveProfile} />
+      <section className="settings-group">
+        <h2>Defaults</h2>
+        <ProfileSettingsForm profile={profile} saving={saving} onSave={saveProfile} />
+      </section>
 
-      <section id="integrations" className="settings-section">
-        <div className="settings-section__heading">
-          <h2>Integrations</h2>
-          <p>Connect only the services Mark-I needs for observation and delivery.</p>
-        </div>
+      <section id="integrations" className="settings-group">
+        <h2>Connections</h2>
 
-        <div className="integration-list">
+        <div className="settings-card integration-list">
           <article className="integration-row">
             <GitBranch size={22} aria-hidden="true" />
             <div className="integration-row__body">
               <h3>GitHub</h3>
               <p>
                 {integrations.github.status === "connected"
-                  ? `Connected as ${integrations.github.accountName ?? "GitHub user"}. ${integrations.github.repositoryCount} repositories selected.`
-                  : "Connect repositories so Mark-I can observe coding activity."}
+                  ? `Connected as ${integrations.github.accountName ?? "GitHub user"}`
+                  : "Not connected"}
               </p>
             </div>
             <button
@@ -98,10 +96,10 @@ function SettingsContent() {
               <h3>Telegram</h3>
               <p>
                 {integrations.telegram.status === "connected"
-                  ? `Connected as ${integrations.telegram.accountName ?? "Telegram user"}.`
+                  ? `Connected as ${integrations.telegram.accountName ?? "Telegram user"}`
                   : integrations.telegram.status === "pending"
-                    ? "Waiting for you to send the link code to the bot."
-                    : "Receive important guidance and continue mentor conversations in Telegram."}
+                    ? "Waiting for link"
+                    : "Not connected"}
               </p>
               {telegramCode ? (
                 <div className="telegram-code">
@@ -138,22 +136,23 @@ function SettingsContent() {
           </article>
         </div>
 
-        {appConfig.dataMode === "local" ? (
-          <p className="settings-mode-note">
-            Local preview mode is active. Integration states are stored in this browser until the backend endpoints are enabled.
-          </p>
-        ) : null}
       </section>
-    </div>
+    </SettingsScaffold>
+
+      {notice ? (
+        <div className="toast" role="status" key={notice}>
+          {notice}
+        </div>
+      ) : null}
+    </>
   );
 }
 
 export default function SettingsPage() {
   return (
     <RouteGuard>
-      <AppShell>
-        <SettingsContent />
-      </AppShell>
+      <SettingsPanel />
     </RouteGuard>
   );
 }
+

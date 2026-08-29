@@ -35,26 +35,25 @@ export default function ProfileSettingsForm({
   };
 
   return (
-    <form className="settings-section form-stack" onSubmit={submit}>
-      <div className="settings-section__heading">
-        <h2>Workspace defaults</h2>
-        <p>These settings provide shared direction and defaults that each agent can override.</p>
+    <form id="general" className="form-stack" onSubmit={submit}>
+      <div className="settings-card settings-rows">
+        <div className="settings-row">
+          <label htmlFor="profile-goal">Goal</label>
+          <textarea
+            id="profile-goal"
+            rows={2}
+            maxLength={280}
+            value={goal}
+            onChange={(event) => setGoal(event.target.value)}
+          />
+        </div>
       </div>
 
-      <label className="field">
-        <span>Workspace goal</span>
-        <textarea
-          rows={4}
-          maxLength={280}
-          value={goal}
-          onChange={(event) => setGoal(event.target.value)}
-        />
-      </label>
-
-      <div className="settings-fields">
-        <label className="field">
-          <span>Default notification behavior</span>
+      <div className="settings-card settings-rows">
+        <div className="settings-row">
+          <label htmlFor="profile-intensity">Notification behavior</label>
           <select
+            id="profile-intensity"
             value={intensity}
             onChange={(event) => setIntensity(event.target.value as Intensity)}
           >
@@ -62,11 +61,12 @@ export default function ProfileSettingsForm({
             <option value="normal">Normal</option>
             <option value="brutal">Brutal</option>
           </select>
-        </label>
+        </div>
 
-        <label className="field">
-          <span>Preferred language</span>
+        <div className="settings-row">
+          <label htmlFor="profile-language">Preferred language</label>
           <select
+            id="profile-language"
             value={language}
             onChange={(event) => setLanguage(event.target.value as PreferredLanguage)}
           >
@@ -74,18 +74,21 @@ export default function ProfileSettingsForm({
             <option value="ru">Русский</option>
             <option value="kk">Қазақша</option>
           </select>
-        </label>
-      </div>
+        </div>
 
-      {validationError ? (
-        <p className="form-message form-message--error" role="alert">{validationError}</p>
-      ) : null}
+        {validationError ? (
+          <div className="settings-row">
+            <p className="form-message form-message--error" role="alert">{validationError}</p>
+          </div>
+        ) : null}
 
-      <div className="settings-section__actions">
-        <button type="submit" className="button button--primary" disabled={saving}>
-          {saving ? "Saving…" : "Save profile"}
-        </button>
+        <div className="settings-row settings-row--actions">
+          <button type="submit" className="button button--primary" disabled={saving}>
+            {saving ? "Saving…" : "Save profile"}
+          </button>
+        </div>
       </div>
     </form>
   );
 }
+

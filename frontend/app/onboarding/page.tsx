@@ -159,7 +159,7 @@ function OnboardingContent() {
               <h1 id="goal-title">What should this workspace help you accomplish?</h1>
               <p>Agents may have separate objectives, but this gives the whole workspace a shared direction.</p>
               <label className="field">
-                <span>Workspace goal</span>
+                <span>Goal</span>
                 <textarea value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="For example: ship and validate our developer tool MVP" rows={4} maxLength={280} autoFocus />
                 <span className="field__hint">{goal.length}/280 characters</span>
               </label>

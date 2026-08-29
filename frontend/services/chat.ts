@@ -59,7 +59,6 @@ export const chatService = {
     const existing = (await this.getConversations(uid, agentIds)).find((item) => item.id === conversationId);
     const conversation: Conversation = {
       id: conversationId,
-      agentIds,
       title: agentIds.length > 1 ? "Agent group" : "Agent chat",
       updatedAt: new Date().toISOString(),
       ...existing,

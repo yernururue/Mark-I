@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { X, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -16,8 +19,17 @@ interface SettingsScaffoldProps {
 }
 
 export default function SettingsScaffold({ title, items, closeHref, children }: SettingsScaffoldProps) {
+  const router = useRouter();
+  
   return (
-    <div className="settings-scaffold-overlay">
+    <div 
+      className="settings-scaffold-overlay" 
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          router.push(closeHref);
+        }
+      }}
+    >
       <div className="settings-scaffold">
         <aside className="settings-local-nav">
           <nav aria-label="Settings sections">

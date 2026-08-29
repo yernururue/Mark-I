@@ -14,10 +14,10 @@ plans:
         status: pending
       - name: dashboard-and-chat
         file: 03-dashboard-and-chat.md
-        status: pending
+        status: in-progress
       - name: settings-and-integrations
         file: 04-settings-and-integrations.md
-        status: pending
+        status: in-progress
       - name: validation-and-handoff
         file: 05-validation-and-handoff.md
         status: pending

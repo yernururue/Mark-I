@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Plus } from "lucide-react";
-import AppShell from "@/components/AppShell";
+import { useSearchParams } from "next/navigation";
+import { Plus, Settings } from "lucide-react";
 import RouteGuard from "@/components/RouteGuard";
 import RouteState from "@/components/RouteState";
 import AgentForm from "@/components/agents/AgentForm";
+import DashboardShell from "@/components/dashboard/DashboardShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { getErrorMessage } from "@/lib/errors";
@@ -15,8 +16,9 @@ import type { CreateAgentInput } from "@/types/models";
 
 function AgentsContent() {
   const { user } = useAuth();
-  const { agents, runs, loading, error, retry } = useDashboardData(user?.uid);
-  const [creating, setCreating] = useState(false);
+  const searchParams = useSearchParams();
+  const { agents, loading, error, retry } = useDashboardData(user?.uid);
+  const [creating, setCreating] = useState(searchParams.get("create") === "true");
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -38,9 +40,10 @@ function AgentsContent() {
   };
 
   return (
-    <div className="page-content agents-page">
+    <DashboardShell agents={agents}>
+      <div className="page-content agents-page">
       <header className="page-header">
-        <div><h1>Agents</h1><p>Configure independent roles, instructions, tools, context, and lifecycle.</p></div>
+        <div><h1>Agents</h1></div>
         <button type="button" className="button button--primary" onClick={() => setCreating(true)}><Plus size={17} />Create agent</button>
       </header>
 
@@ -57,25 +60,20 @@ function AgentsContent() {
       ) : (
         <div className="agents-list">
           {agents.map((agent) => {
-            const agentRuns = runs.filter((run) => run.agentId === agent.id);
-            const activeRuns = agentRuns.filter((run) => run.status === "queued" || run.status === "running").length;
             return (
               <Link href={`/agents/${agent.id}`} key={agent.id} className="agent-card">
-                <span className="agent-card__avatar" aria-hidden="true">{agent.name.charAt(0).toUpperCase()}</span>
-                <span className="agent-card__identity"><strong>{agent.name}</strong><small>{agent.role} · {agent.template}</small></span>
-                <span className="agent-card__objective">{agent.objective}</span>
-                <span className="agent-card__runs">{activeRuns} active · {agentRuns.length} total</span>
-                <em data-status={agent.status}>{agent.status}</em>
-                <ArrowRight size={16} aria-hidden="true" />
+                <strong>{agent.name}</strong>
+                <Settings size={16} aria-hidden="true" />
               </Link>
             );
           })}
         </div>
       )}
-    </div>
+      </div>
+    </DashboardShell>
   );
 }
 
 export default function AgentsPage() {
-  return <RouteGuard><AppShell><AgentsContent /></AppShell></RouteGuard>;
+  return <RouteGuard><AgentsContent /></RouteGuard>;
 }

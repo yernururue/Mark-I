@@ -11,7 +11,7 @@ const TOOL_OPTIONS = [
 ];
 
 const CONTEXT_OPTIONS = [
-  { value: "workspace-goal", label: "Workspace goal" },
+  { value: "workspace-goal", label: "Shared goal" },
   { value: "github-activity", label: "GitHub activity" },
   { value: "product-brief", label: "Product brief" },
 ];
@@ -72,31 +72,62 @@ export default function AgentForm({ initialAgent, submitting, submitLabel, onSub
 
   return (
     <form className="agent-form form-stack" onSubmit={submit}>
-      <div className="settings-fields">
-        <label className="field"><span>Name</span><input value={value.name} onChange={(event) => setValue((current) => ({ ...current, name: event.target.value }))} placeholder="Product designer" /></label>
-        <label className="field"><span>Role</span><input value={value.role} onChange={(event) => setValue((current) => ({ ...current, role: event.target.value }))} placeholder="designer" /></label>
-      </div>
-      <label className="field"><span>Template</span><select value={value.template} onChange={(event) => setValue((current) => ({ ...current, template: event.target.value as CreateAgentInput["template"] }))}><option value="mentor">Mentor</option><option value="designer">Designer</option><option value="custom">Custom</option></select></label>
-      <label className="field"><span>Objective</span><textarea rows={2} value={value.objective} onChange={(event) => setValue((current) => ({ ...current, objective: event.target.value }))} /></label>
-      <label className="field"><span>Instructions</span><textarea rows={4} value={value.instructions} onChange={(event) => setValue((current) => ({ ...current, instructions: event.target.value }))} /></label>
-      <label className="field"><span>Tone</span><select value={value.tone} onChange={(event) => setValue((current) => ({ ...current, tone: event.target.value as CreateAgentInput["tone"] }))}><option value="normal">Normal</option><option value="chill">Chill</option><option value="brutal">Brutal</option><option value="concise">Concise</option></select></label>
+      <section id="agent-general" className="settings-group" aria-label="Agent configuration">
+        <div className="settings-card settings-rows">
+          <div className="settings-row">
+            <label>Name</label>
+            <input value={value.name} onChange={(event) => setValue((current) => ({ ...current, name: event.target.value }))} placeholder="Product designer" />
+          </div>
+          <div className="settings-row">
+            <label>Role</label>
+            <input value={value.role} onChange={(event) => setValue((current) => ({ ...current, role: event.target.value }))} placeholder="designer" />
+          </div>
+          <div className="settings-row">
+            <label>Template</label>
+            <select value={value.template} onChange={(event) => setValue((current) => ({ ...current, template: event.target.value as CreateAgentInput["template"] }))}><option value="mentor">Mentor</option><option value="designer">Designer</option><option value="custom">Custom</option></select>
+          </div>
+          <div className="settings-row">
+            <label>Tone</label>
+            <select value={value.tone} onChange={(event) => setValue((current) => ({ ...current, tone: event.target.value as CreateAgentInput["tone"] }))}><option value="normal">Normal</option><option value="chill">Chill</option><option value="brutal">Brutal</option><option value="concise">Concise</option></select>
+          </div>
+        </div>
 
-      <fieldset className="grant-list">
-        <legend>Tool access</legend>
-        {TOOL_OPTIONS.map((option) => (
-          <label key={option.value}><input type="checkbox" checked={value.toolGrants.includes(option.value)} onChange={() => setValue((current) => ({ ...current, toolGrants: toggleGrant(current.toolGrants, option.value) }))} /><span>{option.label}</span></label>
-        ))}
-      </fieldset>
+        <div className="settings-card settings-rows" style={{ marginTop: "1rem" }}>
+          <div className="settings-row" style={{flexDirection: "column", alignItems: "stretch", gap: "0.75rem"}}>
+            <label>Objective</label>
+            <textarea rows={2} value={value.objective} onChange={(event) => setValue((current) => ({ ...current, objective: event.target.value }))} />
+          </div>
+          <div className="settings-row" style={{flexDirection: "column", alignItems: "stretch", gap: "0.75rem"}}>
+            <label>Instructions</label>
+            <textarea rows={4} value={value.instructions} onChange={(event) => setValue((current) => ({ ...current, instructions: event.target.value }))} />
+          </div>
+        </div>
+      </section>
 
-      <fieldset className="grant-list">
-        <legend>Context access</legend>
-        {CONTEXT_OPTIONS.map((option) => (
-          <label key={option.value}><input type="checkbox" checked={value.contextGrants.includes(option.value)} onChange={() => setValue((current) => ({ ...current, contextGrants: toggleGrant(current.contextGrants, option.value) }))} /><span>{option.label}</span></label>
-        ))}
-      </fieldset>
+      <section id="agent-access" className="settings-group" aria-label="Agent permissions">
+        <div className="settings-card settings-rows">
+          <div className="settings-row" style={{flexDirection: "column", alignItems: "stretch", gap: "0.75rem"}}>
+            <label style={{ color: "var(--text-secondary)", fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Tool Permissions</label>
+            <div className="grant-list" style={{ borderTop: "none", paddingTop: 0, gap: "0.75rem" }}>
+              {TOOL_OPTIONS.map((option) => (
+                <label key={option.value} className="choice-row"><input type="checkbox" checked={value.toolGrants.includes(option.value)} onChange={() => setValue((current) => ({ ...current, toolGrants: toggleGrant(current.toolGrants, option.value) }))} /><span>{option.label}</span></label>
+              ))}
+            </div>
+          </div>
+
+          <div className="settings-row" style={{flexDirection: "column", alignItems: "stretch", gap: "0.75rem"}}>
+            <label style={{ color: "var(--text-secondary)", fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Context Permissions</label>
+            <div className="grant-list" style={{ borderTop: "none", paddingTop: 0, gap: "0.75rem" }}>
+              {CONTEXT_OPTIONS.map((option) => (
+                <label key={option.value} className="choice-row"><input type="checkbox" checked={value.contextGrants.includes(option.value)} onChange={() => setValue((current) => ({ ...current, contextGrants: toggleGrant(current.contextGrants, option.value) }))} /><span>{option.label}</span></label>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {validationError ? <p className="form-message form-message--error" role="alert">{validationError}</p> : null}
-      <div className="form-actions">
+      <div className="form-actions" style={{ padding: "0.5rem 0" }}>
         {onCancel ? <button type="button" className="button button--secondary" onClick={onCancel} disabled={submitting}>Cancel</button> : null}
         <button type="submit" className="button button--primary" disabled={submitting}>{submitting ? "Saving…" : submitLabel}</button>
       </div>

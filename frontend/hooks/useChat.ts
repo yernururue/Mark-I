@@ -40,14 +40,15 @@ export function useChat(uid: string | undefined) {
     let cancelled = false;
     const load = async () => {
       try {
-        const roster = (await agentsService.getAgents(uid)).filter((agent) => agent.status === "active");
+        const roster = (await agentsService.getAgents(uid)).filter((agent) => agent.status !== "archived");
         const initialIds = roster[0] ? [roster[0].id] : [];
         const conversations = await chatService.getConversations(uid, initialIds);
         const activeConversation = conversations[0] ?? null;
         const history = activeConversation ? await chatService.getMessages(uid, activeConversation.id) : [];
         if (cancelled) return;
+        const savedAgentIds = activeConversation?.agentIds.filter((id) => roster.some((agent) => agent.id === id)) ?? [];
         setAgents(roster);
-        setSelectedAgentIds(activeConversation?.agentIds.filter((id) => roster.some((agent) => agent.id === id)) ?? initialIds);
+        setSelectedAgentIds(savedAgentIds.length > 0 ? savedAgentIds : initialIds);
         setConversation(activeConversation);
         setMessages(history);
         setError(null);
