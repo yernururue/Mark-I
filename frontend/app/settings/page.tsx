@@ -4,10 +4,12 @@ import { useState } from "react";
 import { Check, Copy, GitBranch, Plug, Send, Settings2 } from "lucide-react";
 import RouteGuard from "@/components/RouteGuard";
 import RouteState from "@/components/RouteState";
+import DashboardShell from "@/components/dashboard/DashboardShell";
 import ProfileSettingsForm from "@/components/settings/ProfileSettingsForm";
 import SettingsScaffold from "@/components/settings/SettingsScaffold";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/hooks/useSettings";
+import { useAgentRoster } from "@/hooks/useAgentRoster";
 import { appConfig } from "@/lib/config";
 
 const SETTINGS_NAV = [
@@ -53,9 +55,9 @@ function SettingsPanel() {
   };
 
   return (
-    <>
-    <SettingsScaffold title="General Settings" items={SETTINGS_NAV} closeHref="/dashboard">
+    <SettingsScaffold title="General" items={SETTINGS_NAV} closeHref="/dashboard">
       {error ? <p className="form-message form-message--error" role="alert">{error}</p> : null}
+      {notice ? <p className="form-message form-message--success" role="status">{notice}</p> : null}
 
       <section className="settings-group">
         <h2>Defaults</h2>
@@ -138,21 +140,27 @@ function SettingsPanel() {
 
       </section>
     </SettingsScaffold>
+  );
+}
 
-      {notice ? (
-        <div className="toast" role="status" key={notice}>
-          {notice}
-        </div>
-      ) : null}
-    </>
+function SettingsContent() {
+  const { user } = useAuth();
+  const { agents, loading, error, retry } = useAgentRoster(user?.uid);
+
+  if (loading) return <RouteState title="Loading settings" />;
+  if (error) return <RouteState title="Settings unavailable" message={error} onRetry={retry} />;
+
+  return (
+    <DashboardShell agents={agents}>
+      <SettingsPanel />
+    </DashboardShell>
   );
 }
 
 export default function SettingsPage() {
   return (
     <RouteGuard>
-      <SettingsPanel />
+      <SettingsContent />
     </RouteGuard>
   );
 }
-
