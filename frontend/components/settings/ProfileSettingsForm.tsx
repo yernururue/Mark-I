@@ -35,25 +35,22 @@ export default function ProfileSettingsForm({
   };
 
   return (
-    <form id="general" className="form-stack" onSubmit={submit}>
-      <div className="settings-card settings-rows">
-        <div className="settings-row">
-          <label htmlFor="profile-goal">Goal</label>
-          <textarea
-            id="profile-goal"
-            rows={2}
-            maxLength={280}
-            value={goal}
-            onChange={(event) => setGoal(event.target.value)}
-          />
-        </div>
-      </div>
+    <form id="general" className="settings-card settings-form-card form-stack" onSubmit={submit}>
 
-      <div className="settings-card settings-rows">
-        <div className="settings-row">
-          <label htmlFor="profile-intensity">Notification behavior</label>
+      <label className="field">
+        <span>Goal</span>
+        <textarea
+          rows={4}
+          maxLength={280}
+          value={goal}
+          onChange={(event) => setGoal(event.target.value)}
+        />
+      </label>
+
+      <div className="settings-fields">
+        <label className="field">
+          <span>Default notification behavior</span>
           <select
-            id="profile-intensity"
             value={intensity}
             onChange={(event) => setIntensity(event.target.value as Intensity)}
           >
@@ -61,12 +58,11 @@ export default function ProfileSettingsForm({
             <option value="normal">Normal</option>
             <option value="brutal">Brutal</option>
           </select>
-        </div>
+        </label>
 
-        <div className="settings-row">
-          <label htmlFor="profile-language">Preferred language</label>
+        <label className="field">
+          <span>Preferred language</span>
           <select
-            id="profile-language"
             value={language}
             onChange={(event) => setLanguage(event.target.value as PreferredLanguage)}
           >
@@ -74,19 +70,17 @@ export default function ProfileSettingsForm({
             <option value="ru">Русский</option>
             <option value="kk">Қазақша</option>
           </select>
-        </div>
+        </label>
+      </div>
 
-        {validationError ? (
-          <div className="settings-row">
-            <p className="form-message form-message--error" role="alert">{validationError}</p>
-          </div>
-        ) : null}
+      {validationError ? (
+        <p className="form-message form-message--error" role="alert">{validationError}</p>
+      ) : null}
 
-        <div className="settings-row settings-row--actions">
-          <button type="submit" className="button button--primary" disabled={saving}>
-            {saving ? "Saving…" : "Save profile"}
-          </button>
-        </div>
+      <div className="settings-section__actions">
+        <button type="submit" className="button button--primary" disabled={saving}>
+          {saving ? "Saving…" : "Save profile"}
+        </button>
       </div>
     </form>
   );

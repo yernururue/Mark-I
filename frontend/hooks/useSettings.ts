@@ -84,7 +84,6 @@ export function useSettings(uid: string | undefined) {
         const next = await userService.updateProfile(uid, input);
         setProfile(next);
         setNotice("Profile settings saved.");
-        setTimeout(() => setNotice(null), 4000);
       } catch (saveError) {
         setError(getErrorMessage(saveError, "Profile settings could not be saved."));
       } finally {

@@ -7,6 +7,7 @@ import RouteGuard from "@/components/RouteGuard";
 import RouteState from "@/components/RouteState";
 import AgentForm from "@/components/agents/AgentForm";
 import AgentStatusBadge from "@/components/agents/AgentStatusBadge";
+import DashboardShell from "@/components/dashboard/DashboardShell";
 import SettingsScaffold from "@/components/settings/SettingsScaffold";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDashboardData } from "@/hooks/useDashboardData";
@@ -66,63 +67,56 @@ function AgentSettingsContent() {
   };
 
   return (
-    <SettingsScaffold
-      title={
-        <span style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase' }}>Agent Settings</span>
-          <span className="agent-name-with-status" style={{ fontSize: '1.55rem', fontWeight: 600, letterSpacing: '-0.035em', color: 'var(--text)' }}>
-            {agent.name}
-            <AgentStatusBadge status={agent.status} />
-          </span>
-        </span>
-      }
-      items={AGENT_SETTINGS_NAV}
-      closeHref={`/dashboard?agent=${encodeURIComponent(agent.id)}`}
-    >
-      {actionError ? <p className="form-message form-message--error" role="alert">{actionError}</p> : null}
-      {notice ? <p className="form-message form-message--success" role="status">{notice}</p> : null}
+    <DashboardShell agents={agents} selectedAgentId={agent.id}>
+      <SettingsScaffold
+        title={<span className="agent-name-with-status">{agent.name}<AgentStatusBadge status={agent.status} /></span>}
+        items={AGENT_SETTINGS_NAV}
+        closeHref={`/dashboard?agent=${encodeURIComponent(agent.id)}`}
+        variant="modal"
+      >
+        {actionError ? <p className="form-message form-message--error" role="alert">{actionError}</p> : null}
+        {notice ? <p className="form-message form-message--success" role="status">{notice}</p> : null}
 
-      <div className="settings-form-wrapper">
         <AgentForm
           initialAgent={agent}
           submitting={submitting}
           submitLabel="Save changes"
           onSubmit={saveAgent}
         />
-      </div>
 
-      <section id="agent-actions" className="settings-group" aria-label="Agent actions">
-        <div className="settings-card settings-actions-list">
-          <button
-            type="button"
-            className="settings-action"
-            disabled={submitting}
-            onClick={() => user && void runAction(() => agentsService.duplicateAgent(user.uid, agent.id), "Agent duplicated.")}
-          >
-            <Copy size={16} />
-            <span><strong>Duplicate</strong><small>Create a separate copy</small></span>
-          </button>
+        <section id="agent-actions" className="settings-group" aria-label="Agent actions">
+          <div className="settings-card settings-actions-list">
+            <button
+              type="button"
+              className="settings-action"
+              disabled={submitting}
+              onClick={() => user && void runAction(() => agentsService.duplicateAgent(user.uid, agent.id), "Agent duplicated.")}
+            >
+              <Copy size={16} />
+              <span><strong>Duplicate</strong><small>Create a separate copy</small></span>
+            </button>
 
-          <button
-            type="button"
-            className="settings-action"
-            disabled={submitting || agent.status === "archived"}
-            onClick={() => user && void runAction(
-              () => agentsService.updateAgent(user.uid, agent.id, { status: agent.status === "paused" ? "active" : "paused" }),
-              undefined,
-            )}
-          >
-            {agent.status === "paused" ? <Play size={16} /> : <Pause size={16} />}
-            <span><strong>{agent.status === "paused" ? "Resume" : "Pause"}</strong><small>Change availability</small></span>
-          </button>
+            <button
+              type="button"
+              className="settings-action"
+              disabled={submitting || agent.status === "archived"}
+              onClick={() => user && void runAction(
+                () => agentsService.updateAgent(user.uid, agent.id, { status: agent.status === "paused" ? "active" : "paused" }),
+                undefined,
+              )}
+            >
+              {agent.status === "paused" ? <Play size={16} /> : <Pause size={16} />}
+              <span><strong>{agent.status === "paused" ? "Resume" : "Pause"}</strong><small>Change availability</small></span>
+            </button>
 
-          <button type="button" className="settings-action settings-action--danger" disabled={submitting || agent.status === "archived"} onClick={() => void archiveAgent()}>
-            <Archive size={16} />
-            <span><strong>Archive</strong><small>Remove from the agent rail</small></span>
-          </button>
-        </div>
-      </section>
-    </SettingsScaffold>
+            <button type="button" className="settings-action settings-action--danger" disabled={submitting || agent.status === "archived"} onClick={() => void archiveAgent()}>
+              <Archive size={16} />
+              <span><strong>Archive</strong><small>Remove from the agent rail</small></span>
+            </button>
+          </div>
+        </section>
+      </SettingsScaffold>
+    </DashboardShell>
   );
 }
 

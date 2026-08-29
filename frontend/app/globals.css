@@ -225,15 +225,16 @@ button, a, input, textarea, select { transition: color 150ms ease, background-co
 .settings-form-card { padding: 1.35rem; }
 .settings-form-card .form-stack, .settings-form-card.form-stack { gap: 1.15rem; }
 .settings-form-card .field input, .settings-form-card .field textarea, .settings-form-card .field select { background: #242424; }
-.agent-grants-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+.agent-grants-grid { display: grid; gap: 2rem; }
 .agent-grants-grid .grant-list { display: grid; gap: 0.65rem; align-content: start; border: 0; padding: 0; }
 .agent-grants-grid .grant-list legend { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; grid-column: auto; }
-.agent-grants-grid .grant-list label { display: flex; align-items: center; gap: 0.85rem; padding: 0.85rem 1.1rem; background: #151515; border: 1px solid rgba(255,255,255,0.06); border-radius: 0.75rem; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
-.agent-grants-grid .grant-list label:hover { background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.12); }
+.agent-grants-grid .grant-list label { display: flex; align-items: center; gap: 0.85rem; padding: 0.4rem 0; cursor: pointer; transition: color 0.15s; }
+.agent-grants-grid .grant-list label:hover { color: white; }
 .agent-grants-grid .grant-list label input[type="checkbox"] { appearance: none; width: 1.25rem; height: 1.25rem; margin: 0; border: 1.5px solid rgba(255,255,255,0.2); border-radius: 0.35rem; background: transparent; display: grid; place-items: center; transition: all 0.15s ease; flex-shrink: 0; }
 .agent-grants-grid .grant-list label input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
 .agent-grants-grid .grant-list label input[type="checkbox"]:checked::before { content: ""; width: 0.65rem; height: 0.35rem; border-bottom: 2px solid white; border-left: 2px solid white; transform: translateY(-1.5px) rotate(-45deg); display: block; }
-.agent-grants-grid .grant-list label span { font-size: 0.88rem; color: var(--text); font-weight: 500; }
+.agent-grants-grid .grant-list label span { font-size: 0.88rem; color: var(--text-secondary); font-weight: 500; transition: color 0.15s; }
+.agent-grants-grid .grant-list label:hover span { color: var(--text); }
 .settings-actions-list { display: grid; overflow: hidden; }
 .settings-action { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 0.8rem; border: 0; border-top: 1px solid var(--border); background: transparent; padding: 1rem 1.2rem; color: var(--text-secondary); text-align: left; cursor: pointer; }
 .settings-action:first-child { border-top: 0; }
