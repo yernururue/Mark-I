@@ -1,7 +1,7 @@
 # Mark-I — Firestore Schema
 
 > **Status:** Draft v1.0  
-> **Last updated:** 2026-08-19  
+> **Last updated:** 2026-08-29
 > **This document is the database contract between frontend and backend.**
 
 ---
@@ -31,14 +31,12 @@ Root user document. Contains profile data and current skill snapshot.
 | `uid` | string | yes | — | Firebase Auth UID (same as document ID) |
 | `email` | string | yes | — | User's email from Firebase Auth |
 | `displayName` | string | yes | — | User's display name |
-| `goal` | string | yes | — | Learning goal: `"job"`, `"leetcode"`, `"stack:<name>"` |
+| `goal` | string | yes | — | Free-form learning goal (1-500 characters) |
 | `intensity` | string | yes | `"normal"` | Notification intensity: `"chill"`, `"normal"`, `"brutal"` |
 | `language` | string | no | `"en"` | Preferred language: `"en"`, `"ru"` |
 | `telegramUserId` | number \| null | no | `null` | Telegram user ID (set after linking) |
 | `telegramUsername` | string \| null | no | `null` | Telegram username (for display) |
 | `telegramChatId` | number \| null | no | `null` | Telegram chat ID (for sending messages) |
-| `linkCode` | string \| null | no | `null` | Temporary Telegram link code (6 chars) |
-| `linkCodeExpiresAt` | timestamp \| null | no | `null` | Link code expiration time |
 | `githubConnected` | boolean | no | `false` | Whether GitHub is connected |
 | `githubUsername` | string \| null | no | `null` | GitHub username |
 | `githubTokenSecretName` | string \| null | no | `null` | Secret Manager reference for GitHub token |
@@ -61,8 +59,6 @@ Root user document. Contains profile data and current skill snapshot.
   "telegramUserId": 123456789,
   "telegramUsername": "@alexdev",
   "telegramChatId": 123456789,
-  "linkCode": null,
-  "linkCodeExpiresAt": null,
   "githubConnected": true,
   "githubUsername": "alexdev",
   "githubTokenSecretName": "github-token-abc123",
@@ -87,7 +83,7 @@ Root user document. Contains profile data and current skill snapshot.
 - Readable by the owning user (authenticated, `request.auth.uid == uid`)
 - Writable only by backend (Admin SDK)
 - `githubTokenSecretName` is a reference, NOT the actual token
-- `linkCode` is temporary and cleared after use or expiration
+- `telegramLinked` is not stored: the API derives it from `telegramUserId`.
 
 **Indexes:**
 - Default indexes sufficient (single-field queries)
@@ -164,8 +160,9 @@ For `source: "chat"`:
 - Writable only by backend
 
 **Indexes:**
-- Composite: `source` + `createdAt` (descending) — for filtered observation feed
-- Composite: `concept` + `createdAt` (descending) — for concept-specific queries
+- Composite: `source` + `createdAt` + document ID (descending) — for source-filtered cursor pages
+- Composite: `concept` + `createdAt` + document ID (descending) — for concept-filtered cursor pages
+- Composite: `source` + `concept` + `createdAt` + document ID (descending) — when both filters are supplied
 
 ---
 
@@ -197,8 +194,8 @@ Chat messages from both user and agent, across all channels.
 - Writable only by backend
 
 **Indexes:**
-- Default: `createdAt` (ascending) — for chronological message history
-- Composite: `channel` + `createdAt` — for channel-filtered history
+- Composite: `createdAt` + document ID (ascending) — for chronological cursor history
+- Composite: `channel` + `createdAt` + document ID (ascending) — for channel-filtered history
 
 ---
 
@@ -215,6 +212,7 @@ Decision log — records every decision the policy engine makes.
 | `threshold` | number | yes | — | Threshold that was applied |
 | `intensity` | string | yes | — | User's intensity at time of decision |
 | `escalationFlags` | array\<string\> | no | `[]` | Any escalation rules that fired |
+| `deliveryStatus` | string | yes | — | `"pending"`, `"sent"`, `"skipped"`, or `"failed"` |
 | `reason` | string | yes | — | Human-readable explanation |
 | `createdAt` | timestamp | yes | — | When the decision was made |
 
@@ -228,6 +226,7 @@ Decision log — records every decision the policy engine makes.
   "threshold": 5,
   "intensity": "normal",
   "escalationFlags": [],
+  "deliveryStatus": "sent",
   "reason": "Significance 7 >= threshold 5 (normal intensity)",
   "createdAt": "2026-08-19T12:01:00Z"
 }
@@ -247,6 +246,20 @@ Decision log — records every decision the policy engine makes.
 **ANALYSIS RESULT: NOT NEEDED for MVP.**
 
 GitHub integration state is stored directly on the `users/{uid}` document (`githubConnected`, `connectedRepos`, etc.). A separate subcollection would only be needed if we supported many different integration types (Slack, Discord, etc.), which is out of scope.
+
+---
+
+### `telegram_link_codes/{code}`
+
+Temporary, backend-only one-time codes used by the Telegram `/link` flow.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| document ID / `code` | string | yes | Six uppercase letters/digits |
+| `uid` | string | yes | Owner Firebase UID |
+| `expiresAt` | timestamp | yes | Ten-minute expiry |
+
+The code document is read, linked and deleted in one Firestore transaction. It is never exposed to frontend Firestore listeners and is removed on successful linking, expiry or unlink.
 
 ---
 
@@ -345,4 +358,5 @@ service cloud.firestore {
 | `users/{uid}/observations/{obsId}` | Backend | ✅ Realtime listener | ❌ | Observation feed |
 | `users/{uid}/messages/{msgId}` | Backend | ✅ Realtime listener | ❌ | Chat history |
 | `users/{uid}/decisions/{decisionId}` | Backend | ✅ Realtime listener | ❌ | Decision log |
+| `telegram_link_codes/{code}` | Backend | ❌ | ❌ | Transactional temporary Telegram linking code |
 | `processed_events/{eventId}` | Backend | ❌ | ❌ | Deduplication |

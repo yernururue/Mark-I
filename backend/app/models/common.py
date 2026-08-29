@@ -44,3 +44,12 @@ class HealthResponse(BaseModel):
     status: str           # Всегда будет возвращать "ok"
     version: str          # Текущая версия нашего кода (помогает понять, обновился ли сервер)
     timestamp: datetime   # Точное время, когда сервер ответил на запрос
+
+
+class GitHubWebhookResponse(BaseModel):
+    accepted: bool
+    deliveryId: str
+
+
+class TelegramWebhookResponse(BaseModel):
+    ok: bool

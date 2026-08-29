@@ -42,7 +42,7 @@ class CreateProfileRequest(BaseModel):
     Field(...) с троеточием означает, что поле ОБЯЗАТЕЛЬНО для заполнения.
     """
     displayName: str = Field(..., min_length=1, max_length=100, description="Имя пользователя")
-    goal: str = Field(..., description="Цель обучения (например, 'job' - найти работу)")
+    goal: str = Field(..., min_length=1, max_length=500, description="Свободно сформулированная цель обучения")
     intensity: IntensityLevel = Field(..., description="Как часто агент должен писать")
     language: Language = Field(default=Language.EN, description="Язык (по умолчанию английский)")
 
@@ -56,7 +56,7 @@ class UpdateProfileRequest(BaseModel):
     Если пользователь хочет поменять только имя, ему не нужно заново отправлять цель и язык.
     """
     displayName: Optional[str] = Field(None, min_length=1, max_length=100)
-    goal: Optional[str] = None
+    goal: Optional[str] = Field(None, min_length=1, max_length=500)
     intensity: Optional[IntensityLevel] = None
     language: Optional[Language] = None
 
@@ -78,11 +78,10 @@ class UserProfile(BaseModel):
     goal: str
     intensity: IntensityLevel
     language: Language = Language.EN
-    telegramLinked: bool = False             # Привязан ли Телеграм?
-    telegramUserId: Optional[int] = None     # ID пользователя в Телеграме
+    telegramLinked: bool                     # Привязан ли Телеграм?
     telegramUsername: Optional[str] = None   # Ник в Телеграме (если есть)
-    githubConnected: bool = False            # Подключен ли GitHub?
+    githubConnected: bool                    # Подключен ли GitHub?
     githubUsername: Optional[str] = None     # Ник в GitHub (если есть)
     createdAt: datetime                      # Когда аккаунт был создан
     updatedAt: datetime                      # Когда аккаунт обновлялся последний раз
-    onboardingCompleted: bool = False        # Прошел ли пользователь начальную настройку
+    onboardingCompleted: bool                # Прошел ли пользователь начальную настройку

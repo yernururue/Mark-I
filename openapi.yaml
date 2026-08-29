@@ -397,6 +397,7 @@ paths:
                   disconnected:
                     type: boolean
                     example: true
+                required: [disconnected]
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -443,6 +444,7 @@ paths:
                   unlinked:
                     type: boolean
                     example: true
+                required: [unlinked]
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -488,6 +490,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [accepted, deliveryId]
                 properties:
                   accepted:
                     type: boolean
@@ -524,6 +527,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [ok]
                 properties:
                   ok:
                     type: boolean
@@ -580,7 +584,7 @@ components:
           example:
             error:
               code: VALIDATION_ERROR
-              message: "Invalid field: goal must be one of 'job', 'leetcode', or 'stack:<name>'"
+              message: "Invalid request field"
 
   schemas:
     ErrorResponse:
@@ -629,7 +633,9 @@ components:
           example: Alex Dev
         goal:
           type: string
-          example: job
+          minLength: 1
+          maxLength: 500
+          example: Get a backend developer job
         intensity:
           type: string
           enum: [chill, normal, brutal]
@@ -673,8 +679,10 @@ components:
           example: Alex Dev
         goal:
           type: string
-          description: "Learning goal: 'job', 'leetcode', or 'stack:<name>'"
-          example: job
+          minLength: 1
+          maxLength: 500
+          description: Free-form learning goal
+          example: Get a backend developer job
         intensity:
           type: string
           enum: [chill, normal, brutal]
@@ -694,6 +702,8 @@ components:
           maxLength: 100
         goal:
           type: string
+          minLength: 1
+          maxLength: 500
         intensity:
           type: string
           enum: [chill, normal, brutal]
@@ -825,7 +835,7 @@ components:
 
     Decision:
       type: object
-      required: [id, observationId, action, reason, createdAt]
+      required: [id, observationId, action, significanceScore, threshold, intensity, escalationFlags, deliveryStatus, reason, createdAt]
       properties:
         id:
           type: string
@@ -837,6 +847,29 @@ components:
           type: string
           enum: [notified, silent]
           example: notified
+        significanceScore:
+          type: integer
+          minimum: 1
+          maximum: 10
+          example: 7
+        threshold:
+          type: integer
+          minimum: 1
+          maximum: 10
+          example: 5
+        intensity:
+          type: string
+          enum: [chill, normal, brutal]
+          example: normal
+        escalationFlags:
+          type: array
+          items:
+            type: string
+          example: []
+        deliveryStatus:
+          type: string
+          enum: [pending, sent, skipped, failed]
+          example: sent
         reason:
           type: string
           example: "Significance 7 >= threshold 5 (normal intensity)"

@@ -1,7 +1,7 @@
 # Mark-I — API Contract
 
 > **Status:** Draft v1.0  
-> **Last updated:** 2026-08-19  
+> **Last updated:** 2026-08-29
 > **Canonical source:** `openapi.yaml`  
 > **API Version:** v1  
 > **Base URL:** `https://<backend-url>/api/v1`
@@ -125,7 +125,7 @@ Create user profile (during onboarding). Fails if profile already exists.
 | Field | Type | Required | Values |
 |-------|------|----------|--------|
 | `displayName` | string | yes | 1-100 chars |
-| `goal` | string | yes | `"job"`, `"leetcode"`, `"stack:<name>"` |
+| `goal` | string | yes | Free-form learning goal, 1-500 characters |
 | `intensity` | string | yes | `"chill"`, `"normal"`, `"brutal"` |
 | `language` | string | no | `"en"`, `"ru"` (default: `"en"`) |
 
@@ -166,7 +166,7 @@ Update user profile fields.
 }
 ```
 
-All fields optional. Only provided fields are updated.
+All fields optional. Only provided fields are updated. If supplied, `goal` is a free-form value of 1-500 characters. Profile responses intentionally do not include `skills`; use `GET /api/v1/skills` for that data.
 
 **Response 200:** Updated user profile (same format as `GET /api/v1/me`)
 
@@ -278,7 +278,7 @@ Get observations for the authenticated user, with pagination and filters.
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `limit` | int | 20 | Max items per page (1-100) |
-| `cursor` | string | null | Pagination cursor (from previous response) |
+| `cursor` | string | null | Opaque cursor from the previous response (`createdAt` + document ID tie-breaker) |
 | `source` | string | null | Filter by source: `github`, `opportunity`, `chat` |
 | `concept` | string | null | Filter by concept name |
 
@@ -355,7 +355,7 @@ Get chat message history.
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `limit` | int | 50 | Max messages to return (1-200) |
-| `cursor` | string | null | Pagination cursor |
+| `cursor` | string | null | Opaque cursor from the previous response (`createdAt` + document ID tie-breaker) |
 | `channel` | string | null | Filter by channel: `web`, `telegram` |
 
 **Response 200:**
@@ -567,7 +567,7 @@ X-GitHub-Delivery: <delivery-id>
 
 #### `POST /api/v1/webhooks/telegram`
 
-Receive Telegram bot updates. Validated via secret token in path or header.
+Receive Telegram bot updates. Validated via `X-Telegram-Bot-Api-Secret-Token`.
 
 **Authentication:** Secret token in URL path  
 **Content-Type:** `application/json`

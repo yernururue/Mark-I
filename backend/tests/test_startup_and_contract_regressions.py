@@ -136,7 +136,6 @@ def test_unlinked_users_still_receive_opportunity_observation_and_decision():
     assert "if not goal or not telegram_user_id" not in source
 
 
-@pytest.mark.xfail(strict=True, reason="ChatRequest is text-only; OpenAPI requires message, channel and a 2000-char maximum.")
 def test_chat_request_matches_openapi_schema():
     schema = ChatRequest.model_json_schema()
     assert set(schema["properties"]) == {"message", "channel"}
@@ -151,23 +150,19 @@ def test_chat_request_matches_openapi_schema():
         pytest.param("x" * 5001, id="oversized"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="Empty and oversized chat messages currently pass Pydantic validation.")
 def test_chat_rejects_empty_and_oversized_messages(text):
     with pytest.raises(Exception):
-        ChatRequest(text=text)
+        ChatRequest(message=text, channel="web")
 
 
-@pytest.mark.xfail(strict=True, reason="ChatResponse returns only text instead of response/messageId/agentMessageId.")
 def test_chat_response_matches_openapi_schema():
     assert set(ChatResponse.model_fields) == {"response", "messageId", "agentMessageId"}
 
 
-@pytest.mark.xfail(strict=True, reason="ObservationsResponse uses items/nextCursor and omits observations/hasMore.")
 def test_observations_response_matches_openapi_schema():
     assert set(ObservationsResponse.model_fields) == {"observations", "nextCursor", "hasMore"}
 
 
-@pytest.mark.xfail(strict=True, reason="Dashboard stats implementation diverges from the public API contract.")
 def test_dashboard_stats_match_openapi_schema():
     assert set(DashboardStats.model_fields) == {
         "totalObservations",
@@ -177,7 +172,6 @@ def test_dashboard_stats_match_openapi_schema():
     }
 
 
-@pytest.mark.xfail(strict=True, reason="Decision storage/model use intensityThreshold/shouldNotify, while the schema uses threshold/action/intensity.")
 def test_decision_model_matches_firestore_contract():
     assert set(Decision.model_fields) == {
         "id",
@@ -187,6 +181,7 @@ def test_decision_model_matches_firestore_contract():
         "threshold",
         "intensity",
         "escalationFlags",
+        "deliveryStatus",
         "reason",
         "createdAt",
     }

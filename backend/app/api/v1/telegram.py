@@ -1,7 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
-from google.cloud.firestore_v1.client import Client as FirestoreClient
+from fastapi import APIRouter, Depends
 
-from app.dependencies import get_db, get_current_user_id
+from app.dependencies import get_current_user_id, get_telegram_service
 from app.models.telegram import LinkCodeResponse, SuccessResponse
 from app.services.telegram_service import TelegramService
 
@@ -10,27 +9,25 @@ router = APIRouter(tags=["Telegram"])
 @router.post("/telegram/link", response_model=LinkCodeResponse)
 async def generate_telegram_link(
     uid: str = Depends(get_current_user_id),
-    db: FirestoreClient = Depends(get_db)
+    telegram_service: TelegramService = Depends(get_telegram_service),
 ):
     """
     Generates a temporary code to link a Telegram account.
     """
-    telegram_service = TelegramService(db)
-    code = telegram_service.generate_link_code(uid)
-    return LinkCodeResponse(code=code)
+    link = telegram_service.generate_link_code(uid)
+    from app.config import get_settings
+    return LinkCodeResponse(
+        linkCode=link.code,
+        expiresAt=link.expires_at,
+        botUsername=get_settings().TELEGRAM_BOT_USERNAME,
+    )
 
-@router.delete("/telegram/link", response_model=SuccessResponse)
+@router.delete("/telegram/unlink", response_model=SuccessResponse)
 async def unlink_telegram(
     uid: str = Depends(get_current_user_id),
-    db: FirestoreClient = Depends(get_db)
+    telegram_service: TelegramService = Depends(get_telegram_service),
 ):
     """
     Unlinks the Telegram account from the current user.
     """
-    user_ref = db.collection("users").document(uid)
-    user_ref.update({
-        "telegramLinked": False,
-        "telegramUserId": None,
-        "telegramUsername": None
-    })
-    return SuccessResponse(success=True)
+    return SuccessResponse(unlinked=telegram_service.unlink(uid))

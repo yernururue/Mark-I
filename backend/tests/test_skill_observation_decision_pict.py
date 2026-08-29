@@ -43,8 +43,10 @@ def test_decision_policy_pict_matrix(significance, intensity, flags, expected):
     saved = db.collection("users").document("user-1").collection("decisions").get()
     assert should_notify is expected
     assert len(saved) == 1
-    assert saved[0].to_dict()["shouldNotify"] is expected
-    assert saved[0].to_dict()["intensityThreshold"] == {"chill": 7, "normal": 5, "brutal": 3}[intensity]
+    assert saved[0].to_dict()["action"] == ("notified" if expected else "silent")
+    assert saved[0].to_dict()["threshold"] == {"chill": 7, "normal": 5, "brutal": 3}[intensity]
+    assert saved[0].to_dict()["intensity"] == intensity
+    assert saved[0].to_dict()["deliveryStatus"] == ("pending" if expected else "skipped")
     assert "Escalation" in reason if flags else "Significance" in reason
 
 
@@ -129,8 +131,7 @@ def test_observations_filter_by_concept_and_order_newest_first():
     assert [item.id for item in observations] == ["obs-new", "obs-old"]
 
 
-@pytest.mark.xfail(strict=True, reason="The API accepts source, but ObservationService has no source filter parameter.")
 def test_observations_support_source_filter_from_api_contract():
     db = FakeFirestore()
     service = ObservationService(db)
-    service.get_recent_observations("user-1", source="github")
+    assert service.get_recent_observations("user-1", source="github") == []

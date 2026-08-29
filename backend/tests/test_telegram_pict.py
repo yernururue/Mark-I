@@ -16,15 +16,19 @@ from telegrambot.handlers import process_telegram_update
 from tests.fakes import FakeFirestore
 
 
+def telegram_service(db: FakeFirestore) -> TelegramService:
+    return TelegramService(db, transactional_runner=lambda function: function)
+
+
 def test_generate_link_code_has_six_chars_and_ten_minute_ttl():
     db = FakeFirestore()
-    service = TelegramService(db)
+    service = telegram_service(db)
     before = datetime.now(timezone.utc)
 
-    code = service.generate_link_code("user-1")
-    saved = db.collection("telegram_link_codes").document(code).get().to_dict()
+    link = service.generate_link_code("user-1")
+    saved = db.collection("telegram_link_codes").document(link.code).get().to_dict()
 
-    assert re.fullmatch(r"[A-Z0-9]{6}", code)
+    assert re.fullmatch(r"[A-Z0-9]{6}", link.code)
     assert saved["uid"] == "user-1"
     assert before + timedelta(minutes=9, seconds=59) <= saved["expiresAt"] <= before + timedelta(minutes=10, seconds=1)
 
@@ -32,8 +36,8 @@ def test_generate_link_code_has_six_chars_and_ten_minute_ttl():
 def test_valid_code_links_account_and_cannot_be_reused():
     db = FakeFirestore()
     db.collection("users").document("user-1").set({"telegramUserId": None})
-    service = TelegramService(db)
-    code = service.generate_link_code("user-1")
+    service = telegram_service(db)
+    code = service.generate_link_code("user-1").code
 
     assert service.validate_and_link(code.lower(), 123456, "alexdev") is True
     user = db.collection("users").document("user-1").get().to_dict()
@@ -44,7 +48,7 @@ def test_valid_code_links_account_and_cannot_be_reused():
 
 @pytest.mark.parametrize("code", ["INVALID", "", "ABC123"])
 def test_invalid_or_missing_code_is_rejected(code):
-    assert TelegramService(FakeFirestore()).validate_and_link(code, 123456) is False
+    assert telegram_service(FakeFirestore()).validate_and_link(code, 123456) is False
 
 
 def test_expired_code_is_rejected_and_deleted():
@@ -52,7 +56,7 @@ def test_expired_code_is_rejected_and_deleted():
     db.collection("telegram_link_codes").document("OLD123").set(
         {"uid": "user-1", "expiresAt": datetime.now(timezone.utc) - timedelta(seconds=1)}
     )
-    service = TelegramService(db)
+    service = telegram_service(db)
 
     assert service.validate_and_link("OLD123", 123456) is False
     assert db.collection("telegram_link_codes").document("OLD123").get().exists is False
@@ -134,25 +138,21 @@ def test_free_text_from_linked_account_uses_unified_chat(monkeypatch):
     assert send.await_args.args == (123, "Привет!")
 
 
-@pytest.mark.xfail(strict=True, reason="Firestore schema requires telegramChatId, but validate_and_link never writes it.")
 def test_linking_persists_telegram_chat_id():
     db = FakeFirestore()
     db.collection("users").document("user-1").set({})
-    service = TelegramService(db)
-    code = service.generate_link_code("user-1")
+    service = telegram_service(db)
+    code = service.generate_link_code("user-1").code
     service.validate_and_link(code, 123456, "alex")
     user = db.collection("users").document("user-1").get().to_dict()
     assert user["telegramChatId"] == 123456
 
 
-@pytest.mark.xfail(strict=True, reason="OpenAPI requires linkCode/expiresAt/botUsername; the model exposes only code.")
 def test_link_response_matches_openapi_contract():
     fields = set(LinkCodeResponse.model_fields)
     assert fields == {"linkCode", "expiresAt", "botUsername"}
 
 
-@pytest.mark.xfail(strict=True, reason="The implementation uses DELETE /telegram/link; OpenAPI specifies /telegram/unlink.")
 def test_unlink_route_matches_openapi_contract():
     router_source = Path(__file__).parents[1].joinpath("app/api/v1/telegram.py").read_text()
     assert '@router.delete("/telegram/unlink"' in router_source
-

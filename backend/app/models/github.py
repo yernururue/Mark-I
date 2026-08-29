@@ -40,6 +40,10 @@ class SelectReposResponse(BaseModel):
     webhooksRegistered: int = Field(..., description="Количество успешно зарегистрированных вебхуков")
 
 
+class DisconnectResponse(BaseModel):
+    disconnected: bool
+
+
 class GitHubEventEnvelope(BaseModel):
     """Canonical versioned Pub/Sub payload shared by publisher and worker."""
 

@@ -42,8 +42,8 @@ async def process_telegram_update(update: dict, db: FirestoreClient):
             
         chat_service = ChatService(db)
         # Send a typing action (optional, but good UX if supported, here we just process)
-        response_text = await chat_service.process_message(uid, text, channel="telegram")
-        await telegram_service.send_message(chat_id, response_text)
+        response = await chat_service.process_message(uid, text, channel="telegram")
+        await telegram_service.send_message(chat_id, getattr(response, "response", response))
 
 async def _handle_start(chat_id: int, telegram_service: TelegramService):
     welcome_text = (
@@ -60,9 +60,16 @@ async def _handle_link(chat_id: int, text: str, telegram_service: TelegramServic
         return
         
     code = parts[1]
-    username = message.get("from", {}).get("username")
+    sender = message.get("from", {})
+    username = sender.get("username")
+    telegram_user_id = sender.get("id", chat_id)
     
-    success = telegram_service.validate_and_link(code, chat_id, username)
+    success = telegram_service.validate_and_link(
+        code,
+        telegram_user_id,
+        username,
+        telegram_chat_id=chat_id,
+    )
     if success:
         await telegram_service.send_message(
             chat_id, 

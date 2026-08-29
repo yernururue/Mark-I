@@ -5,7 +5,7 @@ from app.services.opportunity_service import OpportunityService
 
 router = APIRouter(tags=["Triggers"])
 
-@router.post("/trigger/opportunities")
+@router.post("/trigger/opportunities", include_in_schema=False)
 async def trigger_opportunities(db: FirestoreClient = Depends(get_db)):
     """
     Эндпоинт для запуска сбора opportunities.

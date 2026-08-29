@@ -1,11 +1,14 @@
 import logging
 from datetime import datetime, timezone
 import uuid
-from typing import List
+from typing import List, Optional
 
 from google.cloud.firestore_v1.client import Client as FirestoreClient
 from app.services.user_service import UserService
 from ai.chat_agent import ChatAgent
+from app.models.chat import ChatMessage, ChatResponse, MessagesResponse
+from app.services.cursor import decode_cursor, encode_cursor
+from google.cloud.firestore_v1.query import Query
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +17,7 @@ class ChatService:
         self._db = db
         self.user_service = UserService(db)
 
-    async def process_message(self, uid: str, text: str, channel: str) -> str:
+    async def process_message(self, uid: str, text: str, channel: str) -> ChatResponse:
         """
         Обрабатывает новое сообщение от пользователя:
         1. Сохраняет сообщение пользователя
@@ -26,7 +29,8 @@ class ChatService:
         # 1. Загружаем профиль пользователя
         profile = self.user_service.get_profile(uid)
         if not profile:
-            return "Error: User profile not found."
+            from app.errors import NotFoundError
+            raise NotFoundError("User profile not found")
 
         # 2. Сохраняем сообщение пользователя
         msg_ref = self._db.collection("users").document(uid).collection("messages").document()
@@ -93,4 +97,46 @@ class ChatService:
         }
         reply_ref.set(agent_msg)
 
-        return agent_response_text
+        return ChatResponse(
+            response=agent_response_text,
+            messageId=msg_ref.id,
+            agentMessageId=reply_ref.id,
+        )
+
+    def get_messages(
+        self,
+        uid: str,
+        limit: int = 50,
+        cursor: Optional[str] = None,
+        channel: Optional[str] = None,
+    ) -> MessagesResponse:
+        """Return chronological message history with an ID tie-breaker cursor."""
+        query = self._db.collection("users").document(uid).collection("messages")
+        if channel:
+            from google.cloud.firestore_v1.base_query import FieldFilter
+            query = query.where(filter=FieldFilter("channel", "==", channel))
+        query = query.order_by("createdAt", direction=Query.ASCENDING).order_by("__name__", direction=Query.ASCENDING)
+        if cursor:
+            created_at, document_id = decode_cursor(cursor)
+            query = query.start_after({"createdAt": created_at, "__name__": document_id})
+        docs = list(query.limit(limit + 1).stream())
+        has_more = len(docs) > limit
+        page_docs = docs[:limit]
+        messages = [self._firestore_to_message(doc.to_dict()) for doc in page_docs]
+        next_cursor = None
+        if has_more and messages:
+            next_cursor = encode_cursor(messages[-1].createdAt, messages[-1].id)
+        return MessagesResponse(messages=messages, nextCursor=next_cursor, hasMore=has_more)
+
+    @staticmethod
+    def _firestore_to_message(data: dict) -> ChatMessage:
+        created_at = data["createdAt"]
+        if hasattr(created_at, "timestamp"):
+            created_at = datetime.fromtimestamp(created_at.timestamp(), tz=timezone.utc)
+        return ChatMessage(
+            id=data["id"],
+            role=data["role"],
+            channel=data["channel"],
+            text=data["text"],
+            createdAt=created_at,
+        )

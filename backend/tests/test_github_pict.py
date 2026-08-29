@@ -269,23 +269,11 @@ def test_webhook_hmac_signature_validation(valid):
     assert service.verify_webhook_signature(body, header) is valid
 
 
-def test_webhook_rejects_malformed_json_after_valid_signature():
-    class Service:
-        def verify_webhook_signature(self, body, signature):
-            return True
+def test_webhook_body_schema_is_a_required_json_object():
+    from app.main import app
 
-    with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(
-            receive_github_webhook(
-                request=DummyRequest(b"not-json"),
-                x_hub_signature_256="sha256=valid",
-                x_github_event="push",
-                x_github_delivery="delivery-1",
-                service=Service(),
-            )
-        )
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail["error"]["code"] == "BAD_REQUEST"
+    schema = app.openapi()["paths"]["/api/v1/webhooks/github"]["post"]["requestBody"]
+    assert schema["required"] is True
 
 
 def test_webhook_publishes_valid_payload_and_delivery_id():
@@ -300,7 +288,8 @@ def test_webhook_publishes_valid_payload_and_delivery_id():
 
     response = asyncio.run(
         receive_github_webhook(
-            request=DummyRequest(b'{"repository":{"full_name":"alex/repo"}}'),
+                request=DummyRequest(b'{"repository":{"full_name":"alex/repo"}}'),
+                payload={"repository": {"full_name": "alex/repo"}},
             x_hub_signature_256="sha256=valid",
             x_github_event="push",
             x_github_delivery="delivery-1",
@@ -308,7 +297,7 @@ def test_webhook_publishes_valid_payload_and_delivery_id():
         )
     )
 
-    assert response == {"accepted": True, "deliveryId": "delivery-1"}
+    assert response.model_dump() == {"accepted": True, "deliveryId": "delivery-1"}
     assert calls == [
         {
             "event_type": "push",

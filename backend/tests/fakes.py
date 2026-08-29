@@ -39,25 +39,28 @@ class FakeQuery:
         db: "FakeFirestore",
         path: tuple[str, ...],
         filters: tuple[tuple[str, str, Any], ...] = (),
-        order: tuple[str, str] | None = None,
+        orders: tuple[tuple[str, str], ...] = (),
         limit_value: int | None = None,
         limit_last: bool = False,
+        start_after: dict[str, Any] | None = None,
     ) -> None:
         self._db = db
         self._path = path
         self._filters = filters
-        self._order = order
+        self._orders = orders
         self._limit = limit_value
         self._limit_last = limit_last
+        self._start_after = start_after
 
     def _clone(self, **changes: Any) -> "FakeQuery":
         values = {
             "db": self._db,
             "path": self._path,
             "filters": self._filters,
-            "order": self._order,
+            "orders": self._orders,
             "limit_value": self._limit,
             "limit_last": self._limit_last,
+            "start_after": self._start_after,
         }
         values.update(changes)
         return FakeQuery(**values)
@@ -66,7 +69,10 @@ class FakeQuery:
         return self._clone(filters=(*self._filters, (filter.field_path, filter.op_string, filter.value)))
 
     def order_by(self, field: str, direction: str = "ASCENDING") -> "FakeQuery":
-        return self._clone(order=(field, direction))
+        return self._clone(orders=(*self._orders, (field, direction)))
+
+    def start_after(self, values: dict[str, Any]) -> "FakeQuery":
+        return self._clone(start_after=dict(values))
 
     def limit(self, value: int) -> "FakeQuery":
         return self._clone(limit_value=value, limit_last=False)
@@ -85,12 +91,25 @@ class FakeQuery:
             if operator != "==":
                 raise NotImplementedError(operator)
             rows = [row for row in rows if (row._data or {}).get(field) == expected]
-        if self._order:
-            field, direction = self._order
+        for field, direction in reversed(self._orders):
             rows.sort(
-                key=lambda row: (row._data or {}).get(field),
+                key=lambda row: row.id if field == "__name__" else (row._data or {}).get(field),
                 reverse=str(direction).upper().endswith("DESCENDING"),
             )
+        if self._start_after:
+            marker = next(
+                (
+                    index
+                    for index, row in enumerate(rows)
+                    if all(
+                        (row.id if field == "__name__" else (row._data or {}).get(field)) == value
+                        for field, value in self._start_after.items()
+                    )
+                ),
+                None,
+            )
+            if marker is not None:
+                rows = rows[marker + 1 :]
         if self._limit is not None:
             rows = rows[-self._limit :] if self._limit_last else rows[: self._limit]
         return rows
@@ -154,6 +173,9 @@ class FakeTransaction:
             document.update(data)
             return
         document.set(data)
+
+    def delete(self, document: FakeDocument) -> None:
+        document.delete()
 
 
 class FakeFirestore:

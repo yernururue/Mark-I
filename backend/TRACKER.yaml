@@ -231,11 +231,11 @@ plans:
         depends_on: firestore-sdk-correctness
 
   - name: backend-remediation-stage-2-github-pipeline
-    path: docs/plans/2026-08-29-backend-remediation-stage-2-github-pipeline/
-    status: in-progress
+    path: docs/systems/backend-remediation-stage-2-github-pipeline/
+    status: shipped
     created: 2026-08-29
     started: 2026-08-29
-    shipped:
+    shipped: 2026-08-29
     source: docs/reports/2026-08-28-backend-remediation-roadmap.md
     approval_required: true
     tasks:
@@ -264,6 +264,35 @@ plans:
         depends_on:
           - idempotency-and-retries
           - github-event-extractors
+
+  - name: backend-remediation-stage-3-api-firestore-contracts
+    path: docs/systems/backend-remediation-stage-3-api-firestore-contracts/
+    status: shipped
+    created: 2026-08-29
+    started: 2026-08-29
+    shipped: 2026-08-29
+    source: docs/reports/2026-08-28-backend-remediation-roadmap.md
+    tasks:
+      - name: canonical-openapi-and-errors
+        file: 01-canonical-openapi-and-errors.md
+        status: done
+        description: "Canonical OpenAPI parity tests and documented API error envelope"
+        depends_on: backend-remediation-stage-2-github-pipeline
+      - name: chat-and-observations
+        file: 02-chat-and-observations.md
+        status: done
+        description: "Chat request/history and observation filter/cursor contracts"
+        depends_on: canonical-openapi-and-errors
+      - name: telegram-dashboard-decisions-profile
+        file: 03-telegram-dashboard-decisions-profile.md
+        status: done
+        description: "Telegram link lifecycle, real dashboard/decisions and profile goal contract"
+        depends_on: chat-and-observations
+      - name: acceptance-and-shipping
+        file: 04-acceptance-and-shipping.md
+        status: done
+        description: "Locked Python 3.11 verification, acceptance report and system shipping"
+        depends_on: telegram-dashboard-decisions-profile
 
 ## --- ЧТО СДЕЛАНО В ЭТОМ ЧАТЕ ---
 

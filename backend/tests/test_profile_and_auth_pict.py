@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import pytest
 from fastapi import HTTPException
@@ -175,3 +176,18 @@ def test_profile_request_validation_rejects_invalid_values(payload):
     with pytest.raises(ValidationError):
         CreateProfileRequest.model_validate(payload)
 
+
+@pytest.mark.parametrize("goal", ["", "x" * 501])
+def test_profile_goal_is_free_text_but_has_mvp_length_bounds(goal):
+    with pytest.raises(ValidationError):
+        CreateProfileRequest(displayName="Alex", goal=goal, intensity="normal")
+
+
+def test_profile_response_does_not_duplicate_skills_endpoint_data():
+    assert "skills" not in UserService(FakeFirestore())._firestore_to_profile(
+        {
+            "uid": "user-1", "email": "a@example.com", "displayName": "Alex", "goal": "Learn",
+            "intensity": "normal", "telegramUserId": None, "githubConnected": False,
+            "createdAt": datetime.now(timezone.utc), "updatedAt": datetime.now(timezone.utc), "onboardingCompleted": True,
+        }
+    ).model_dump()

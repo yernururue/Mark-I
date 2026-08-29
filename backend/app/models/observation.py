@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from pydantic import BaseModel, ConfigDict
 
 class Observation(BaseModel):
@@ -15,5 +15,6 @@ class Observation(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class ObservationsResponse(BaseModel):
-    items: List[Observation]
+    observations: list[Observation]
     nextCursor: Optional[str] = None
+    hasMore: bool

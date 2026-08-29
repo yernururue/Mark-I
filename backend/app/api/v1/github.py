@@ -13,6 +13,7 @@ from app.models.github import (
     GitHubCallbackRequest,
     GitHubCallbackResponse,
     GitHubReposResponse,
+    DisconnectResponse,
     SelectReposRequest,
     SelectReposResponse,
 )
@@ -79,11 +80,11 @@ async def select_github_repos(
     )
 
 
-@router.delete("/disconnect")
+@router.delete("/disconnect", response_model=DisconnectResponse)
 async def disconnect_github(
     current_user: dict = Depends(get_current_user),
     service: GitHubService = Depends(get_github_service),
 ):
     """Отключить GitHub полностью (DELETE /api/v1/github/disconnect)."""
     await service.disconnect(current_user["uid"])
-    return {"disconnected": True}
+    return DisconnectResponse(disconnected=True)

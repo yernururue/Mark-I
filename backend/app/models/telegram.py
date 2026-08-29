@@ -1,7 +1,11 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 class LinkCodeResponse(BaseModel):
-    code: str
+    linkCode: str
+    expiresAt: datetime
+    botUsername: str
 
 class SuccessResponse(BaseModel):
-    success: bool
+    unlinked: bool

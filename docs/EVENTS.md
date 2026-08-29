@@ -1,7 +1,7 @@
 # Mark-I — Event Architecture
 
 > **Status:** Draft v1.0  
-> **Last updated:** 2026-08-19
+> **Last updated:** 2026-08-29
 
 ---
 
@@ -125,7 +125,7 @@ POST /api/v1/webhooks/telegram
     ├─ If COMMAND (/link <code>):
     │       ├─ 3b. Look up link code in Firestore
     │       ├─ 4b. Validate code (exists, not expired)
-    │       ├─ 5b. Link telegramUserId ↔ uid
+    │       ├─ 5b. Link telegramUserId and telegramChatId ↔ uid
     │       ├─ 6b. Clear link code
     │       ├─ 7b. Send confirmation message
     │       └─ 8b. Return 200

@@ -61,7 +61,8 @@ def test_chat_persona_matches_intensity(monkeypatch, intensity, tone_fragment):
 
     response = asyncio.run(chat_module.ChatService(db).process_message("user-1", "How am I doing?", "web"))
 
-    assert response == "Tailored answer"
+    assert response.response == "Tailored answer"
+    assert response.messageId != response.agentMessageId
     assert tone_fragment in RecordingAgent.calls[0]["instruction"]
     messages = db.collection("users").document("user-1").collection("messages").get()
     assert [message.to_dict()["role"] for message in messages] == ["user", "agent"]
@@ -77,7 +78,7 @@ def test_russian_message_and_response_keep_telegram_channel(monkeypatch):
 
     response = asyncio.run(chat_module.ChatService(db).process_message("user-1", "Помоги с Python", "telegram"))
 
-    assert response.startswith("Конечно")
+    assert response.response.startswith("Конечно")
     assert RecordingAgent.calls[0]["message"] == "Помоги с Python"
     messages = db.collection("users").document("user-1").collection("messages").get()
     assert all(message.to_dict()["channel"] == "telegram" for message in messages)
@@ -100,14 +101,14 @@ def test_sequential_messages_reuse_shared_history(monkeypatch):
     assert [item["role"] for item in second_history] == ["user", "agent"]
 
 
-def test_missing_profile_returns_safe_error_without_calling_agent(monkeypatch):
+def test_missing_profile_raises_not_found_without_calling_agent(monkeypatch):
     db = FakeFirestore()
     RecordingAgent.calls = []
     monkeypatch.setattr(chat_module, "ChatAgent", RecordingAgent)
 
-    response = asyncio.run(chat_module.ChatService(db).process_message("missing", "Hello", "web"))
-
-    assert response == "Error: User profile not found."
+    from app.errors import NotFoundError
+    with pytest.raises(NotFoundError):
+        asyncio.run(chat_module.ChatService(db).process_message("missing", "Hello", "web"))
     assert RecordingAgent.calls == []
 
 
@@ -120,6 +121,6 @@ def test_agent_failure_fallback_is_stored(monkeypatch):
 
     response = asyncio.run(chat_module.ChatService(db).process_message("user-1", "Review my code", "web"))
 
-    assert "trouble processing" in response
+    assert "trouble processing" in response.response
     saved = db.collection("users").document("user-1").collection("messages").get()
-    assert saved[-1].to_dict()["text"] == response
+    assert saved[-1].to_dict()["text"] == response.response
