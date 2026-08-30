@@ -72,7 +72,7 @@
 | **Question** | How should the system decide whether to notify the user about an observation? |
 | **Options** | 1. Include notification logic in the agent prompt ("decide if this is important enough to notify") 2. Explicit Python decision policy function 3. Rule engine (e.g., Drools) |
 | **Decision** | Explicit Python decision policy |
-| **Reason** | — **Transparency:** Can show exact rules on dashboard ("why did the agent decide this?") — **Determinism:** Same input always produces same decision — **Testability:** Unit-testable without AI — **Demo value:** Judges can see explicit logic, not a black box — **Separation of concerns:** AI judges importance (significance score), code makes the binary decision — The plan specifically requires this: "Decision policy should remain explicit (if/else, not 'agent decided inside one big prompt')" |
+| **Reason** | — **Transparency:** The agent can explain exact rules in the existing chat or run details — **Determinism:** Same input always produces same decision — **Testability:** Unit-testable without AI — **Demo value:** Judges can inspect explicit logic, not a black box — **Separation of concerns:** AI judges importance (significance score), code makes the binary decision — The plan specifically requires this: "Decision policy should remain explicit (if/else, not 'agent decided inside one big prompt')" |
 | **Consequences** | - Policy rules must be maintained separately from prompts — Significance score from Gemini is the bridge between AI judgment and deterministic decision — Need to keep prompt and policy in sync (both need to agree on what "significance" means) |
 
 ---
@@ -208,20 +208,20 @@ These decisions have NOT been made yet. They require further discussion or infor
 | Field | Value |
 |-------|-------|
 | **Question** | Which CSS framework / component library should the frontend use? |
-| **Status** | Open |
-| **Impact** | Frontend implementation |
-| **Options** | CSS Modules, Tailwind CSS, Chakra UI, shadcn/ui |
-| **Note** | To be decided by frontend developer (Vlad) |
+| **Status** | Closed — preserve current styling |
+| **Impact** | No framework migration or dashboard restyling is planned |
+| **Options** | Keep the existing CSS and component structure |
+| **Note** | The current dashboard is approved and visually frozen. Internal cleanup must not alter its rendered design. |
 
 ### OQ-003 — Charting Library
 
 | Field | Value |
 |-------|-------|
-| **Question** | Which library for skill visualization (radar chart, bar charts)? |
-| **Status** | Open |
-| **Impact** | Dashboard implementation |
-| **Options** | Recharts, Chart.js, D3.js, Nivo |
-| **Note** | To be decided by frontend developer (Vlad) |
+| **Question** | Does the approved dashboard require a charting library? |
+| **Status** | Closed — no dashboard chart planned |
+| **Impact** | None; do not add a skill visualization to the approved dashboard |
+| **Options** | No charting library required for the current product direction |
+| **Note** | Remove the unused chart dependency later after verifying that no retained source path uses it. |
 
 ### OQ-004 — Local Development Experience
 

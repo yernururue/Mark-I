@@ -9,8 +9,8 @@ areas:
 
   frontend:
     status: in-progress
-    current_plan: frontend-mvp
-    notes: "Plan created 2026-08-23, 6 tasks (01, 03 done; 04 in progress)."
+    current_plan: frontend-prd-trd-alignment
+    notes: "Contract and repository alignment completed 2026-08-30 without dashboard visual changes. Frontend DTO boundaries are validated; atomic onboarding, isolated remote conversations, and management integration remain in the active alignment plan, with backend gaps documented for API owner confirmation."
 
 integration:
   status: planned
@@ -22,7 +22,7 @@ plans:
     created: 2026-08-21
   - name: frontend-mvp
     area: frontend
-    status: in-progress
+    status: shipped
     created: 2026-08-23
   - name: backend-remediation-stage-2-github-pipeline
     area: backend

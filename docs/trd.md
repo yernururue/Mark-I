@@ -1,18 +1,23 @@
 # Mark-I — Technical Requirements Document
 
-> **Status:** Draft v1.0  
-> **Last updated:** 2026-08-19  
+> **Status:** Draft v1.2
+> **Last updated:** 2026-08-29  
 > **Authors:** Yernur (backend/agent), Vlad (frontend)
 
 ---
 
 ## 1. System Overview
 
-Mark-I is a cloud-native AI-powered developer mentoring platform. It consists of:
+Mark-I is a cloud-native workspace for **Multiple Customizable Agents**. A user can create several specialized agents, switch between isolated conversations, customize each agent's identity and behavior, and run work with scoped context and traceable ownership. Developer mentoring is the first agent template and GitHub remains the first deep activity integration.
 
-- **Frontend** — Next.js web app hosted on Firebase Hosting
+The product, frontend, backend, persistence layer, and runtime all use **agent** as the single domain term, with stable identifiers such as `agentId`.
+
+The platform consists of:
+
+- **Frontend** — Next.js web app on a Next-compatible Firebase/Google runtime
 - **Backend** — FastAPI service running on Cloud Run
-- **AI Agent** — Google ADK agent with Gemini model
+- **Agent Runtime** — Google ADK + Gemini instances created from stored agent configurations
+- **Run Orchestrator** — routes assignments, schedules concurrent runs, enforces limits, and records state
 - **Integrations** — GitHub (OAuth + webhooks), Telegram Bot API
 - **Infrastructure** — Firestore, Pub/Sub, Cloud Scheduler, Secret Manager
 
@@ -20,12 +25,14 @@ Mark-I is a cloud-native AI-powered developer mentoring platform. It consists of
 
 ## 2. Architecture Summary
 
+This is the directional target architecture. The existing frontend dashboard is visually frozen: its shell, roster, chat canvas, layout, styles, navigation, and component arrangement remain in place. Changes occur behind that interface in services, state, validation, and backend adapters.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        FRONTEND                              │
-│  Next.js + Firebase Auth + Firebase Hosting                  │
+│  Next.js + Firebase Auth + Next-compatible hosting           │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
-│  │Dashboard │ │  Chat    │ │ Settings │ │Onboarding│       │
+│  │Dashboard │ │ Agents   │ │  Chat    │ │Onboarding│       │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
 │         │            │            │            │             │
 │         └────────────┴────────────┴────────────┘             │
@@ -40,8 +47,8 @@ Mark-I is a cloud-native AI-powered developer mentoring platform. It consists of
 │                        BACKEND                               │
 │  FastAPI on Cloud Run                                        │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
-│  │ API      │ │ Webhooks │ │ Chat Svc │ │ Decision │       │
-│  │ Routes   │ │ Handler  │ │          │ │ Policy   │       │
+│  │ API      │ │ Webhooks │ │ Run Orch.│ │ Decision │       │
+│  │ Routes   │ │ Handler  │ │ + Router │ │ Policy   │       │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
 │         │            │            │            │             │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐                    │
@@ -50,12 +57,11 @@ Mark-I is a cloud-native AI-powered developer mentoring platform. It consists of
 │  └──────────┘ └──────────┘ └──────────┘                    │
 │         │            │            │                          │
 │  ┌────────────────────────────────────────┐                  │
-│  │           ADK Agent + Gemini           │                  │
-│  │  Tools: read_profile, read_skills,     │                  │
-│  │  read_observations, search_obs,        │                  │
-│  │  send_telegram, update_skill,          │                  │
-│  │  create_observation, search_opps,      │                  │
-│  │  query_github, explain_decision        │                  │
+│  │        Agent Runtime (ADK + Gemini)    │                  │
+│  │  Loads: identity, role, instructions,  │                  │
+│  │  tool grants, private/shared context   │                  │
+│  │  Emits: messages, artifacts, handoffs, │                  │
+│  │  observations, decisions, run events   │                  │
 │  └────────────────────────────────────────┘                  │
 └──────────────────────┬───────────────────────────────────────┘
                        │
@@ -82,14 +88,16 @@ Mark-I is a cloud-native AI-powered developer mentoring platform. It consists of
 
 | Component | Technology |
 |-----------|-----------|
-| Framework | Next.js 14+ (App Router) |
-| Language | TypeScript |
+| Framework | Next.js 16 (App Router) |
+| UI runtime | React 19 |
+| Language | TypeScript (strict) |
 | Auth | Firebase Auth (client SDK) |
-| Hosting | Firebase Hosting |
 | Realtime | Firestore client SDK (onSnapshot) |
-| HTTP | Fetch API / Axios for backend REST calls |
-| Styling | TBD (CSS Modules / Tailwind / Chakra) |
-| Charts | TBD (Recharts / Chart.js / D3) |
+| HTTP | Typed wrapper around Fetch API |
+| Styling | Global CSS with Tailwind 4 build processing |
+| Icons | Lucide React |
+| Development data | Explicit localStorage adapter and simulators |
+| Hosting | Next-compatible runtime; final Firebase deployment mode must be confirmed |
 
 ### 3.2 Pages & Routes
 
@@ -97,11 +105,16 @@ Mark-I is a cloud-native AI-powered developer mentoring platform. It consists of
 |-------|---------|---------------|
 | `/` | Landing / redirect to dashboard | No |
 | `/login` | Sign-in page | No |
-| `/onboarding` | First-time setup wizard | Yes |
-| `/dashboard` | Main dashboard with skills, observations, decisions | Yes |
-| `/chat` | Chat interface with agent | Yes |
-| `/settings` | Profile, integrations, preferences | Yes |
+| `/onboarding` | Workspace defaults and first-agent setup | Yes |
+| `/dashboard` | Existing chat-first workspace and agent switcher | Yes |
+| `/agents` | Create and manage agents | Yes |
+| `/agents/[agentId]` | Agent configuration and lifecycle | Yes |
+| `/runs/[runId]` | Live run timeline, outputs, controls, and blockers | Yes |
+| `/chat` | Compatibility redirect to `/dashboard` | Yes |
+| `/settings` | Workspace defaults, integrations, and preferences | Yes |
 | `/auth/github/callback` | GitHub OAuth callback handler | Yes |
+
+The existing `/agents` routes already match the product terminology and should remain canonical. Selected agent and conversation identity must be deep-linkable; changing agents must load a separate conversation rather than mutate recipients on the current thread.
 
 ### 3.3 Frontend ↔ Backend Communication
 
@@ -110,15 +123,28 @@ Mark-I is a cloud-native AI-powered developer mentoring platform. It consists of
 - Frontend obtains token via `firebase.auth().currentUser.getIdToken()`
 - Token refreshed automatically by Firebase SDK
 - All endpoints prefixed with `/api/v1/`
+- Remote mode must expose real list/create/select conversation contracts; the frontend must not fabricate a single workspace conversation.
+- External JSON must be decoded at the DTO boundary before it becomes agent domain state.
 
 **Firestore Realtime:**
 - Frontend reads directly from Firestore for realtime updates:
   - `users/{uid}` — profile, skills
+  - `users/{uid}/agents/{agentId}` — agent identity, behavior, and grants
+  - `users/{uid}/runs/{runId}` — assignment and run lifecycle
+  - `users/{uid}/artifacts/{artifactId}` — outputs shared by reference
+  - `users/{uid}/handoffs/{handoffId}` — traceable agent-to-agent handoffs
   - `users/{uid}/observations/{obsId}` — observation feed
   - `users/{uid}/messages/{msgId}` — chat messages
   - `users/{uid}/decisions/{decisionId}` — decision log
 - Frontend does NOT write to Firestore directly (all mutations go through backend API)
 - Firestore Security Rules enforce read-only access for authenticated users to their own data
+
+**Frontend data boundaries:**
+- Firestore/API payloads use typed agent DTOs and stable `agentId` values.
+- Mappers validate transport payloads and produce agent summaries/details for UI use.
+- Profile, roster, agent detail, conversations, messages, runs, and integrations have focused loading/error/subscription state.
+- The local adapter implements the same repository contracts as the remote adapter and is selected explicitly.
+- Production configuration fails fast instead of silently falling back to local preview data.
 
 ### 3.4 Frontend Responsibilities
 
@@ -127,16 +153,39 @@ The frontend is responsible for:
 - Firebase Auth client-side flow
 - GitHub OAuth redirect initiation
 - Firestore listener management for realtime updates
+- Agent creation/configuration and multi-run status presentation
+- Canonical selected-agent and selected-conversation state
+- One-to-one conversation isolation when switching agents
 - REST API calls for mutations and actions
 - Client-side routing and navigation
 
 The frontend is NOT responsible for:
 - Business logic
-- AI/Agent processing
+- Agent execution and run orchestration
 - Webhook handling
 - Decision making
 - Direct Firestore writes
 - Secret management
+
+### 3.5 Existing dashboard preservation
+
+- Preserve the current dashboard shell, roster rail, chat canvas, composer, layout, styles, navigation, and component arrangement exactly.
+- Do not add panels, widgets, badges, unread/activity indicators, analytics surfaces, or new dashboard navigation.
+- Connect existing controls and states to validated backend services without changing their visual output.
+- Remove unused subscriptions, assets, selectors, and dependencies only after proving they do not support the current dashboard.
+- One-to-one agent threads are isolated in the data layer while using the existing chat interface; group-chat UI is out of scope.
+
+### 3.6 Agent customization contract
+
+The frontend agent model supports the fields already represented by the approved UI:
+
+- stable `agentId` and lifecycle state;
+- name, role, template, objective, and instructions;
+- tone, tool grants, and context grants;
+- active/paused/archived lifecycle and schema version;
+- timestamps required by current list/detail views.
+
+Create and update commands are separate types. Template and capability metadata come from one shared catalog used by onboarding and management.
 
 ---
 
@@ -180,6 +229,9 @@ backend/
 │   │   │   ├── skills.py          # Skills endpoints
 │   │   │   ├── observations.py    # Observations endpoints
 │   │   │   ├── chat.py            # Chat endpoints
+│   │   │   ├── agents.py         # agent CRUD and configuration
+│   │   │   ├── runs.py            # Start, inspect, pause, cancel runs
+│   │   │   ├── artifacts.py       # Run output metadata
 │   │   │   ├── github.py          # GitHub integration endpoints
 │   │   │   └── telegram.py        # Telegram linking endpoints
 │   │   │
@@ -196,6 +248,10 @@ backend/
 │   │   ├── observation_service.py # Observation CRUD
 │   │   ├── skill_service.py       # Skill tracking logic
 │   │   ├── chat_service.py        # Unified chat handling
+│   │   ├── agent_service.py      # agent lifecycle and validation
+│   │   ├── run_service.py         # Run state and concurrency limits
+│   │   ├── routing_service.py     # Route events/assignments to agents
+│   │   ├── handoff_service.py     # Explicit cross-agent handoffs
 │   │   ├── opportunity_service.py # Opportunity collection
 │   │   └── decision_service.py    # Decision policy engine
 │   │
@@ -205,6 +261,10 @@ backend/
 │   │   ├── observation.py         # Observation models
 │   │   ├── skill.py               # Skill models
 │   │   ├── message.py             # Chat message models
+│   │   ├── agent.py              # agent configuration and grants
+│   │   ├── run.py                 # Assignment and run lifecycle
+│   │   ├── artifact.py            # Run outputs and shared references
+│   │   ├── handoff.py             # Collaboration records
 │   │   ├── decision.py            # Decision models
 │   │   └── github.py              # GitHub event models
 │   │
@@ -214,8 +274,11 @@ backend/
 │
 ├── ai/
 │   ├── __init__.py
-│   ├── agent.py                   # ADK Agent definition
-│   ├── prompts.py                 # System prompts & persona templates
+│   ├── runtime.py                 # Build an ADK runtime from agent config
+│   ├── orchestrator.py            # Dispatch and coordinate concurrent runs
+│   ├── router.py                  # Select agents for messages/events
+│   ├── templates.py               # Mentor, Designer, and starter templates
+│   ├── prompts.py                 # Composable role and behavior prompts
 │   ├── tools/
 │   │   ├── __init__.py
 │   │   ├── profile_tools.py       # read_user_profile
@@ -240,7 +303,8 @@ backend/
 ├── workers/
 │   ├── __init__.py
 │   ├── github_worker.py           # Pub/Sub → GitHub event processor
-│   └── opportunity_worker.py      # Pub/Sub → Opportunity collector
+│   ├── opportunity_worker.py      # Pub/Sub → Opportunity collector
+│   └── agent_run_worker.py       # Pub/Sub → isolated agent run
 │
 ├── requirements.txt
 ├── Dockerfile
@@ -281,7 +345,10 @@ The backend is responsible for:
 - GitHub OAuth token exchange and storage
 - GitHub webhook processing and event analysis
 - Telegram bot command handling and message sending
-- ADK agent orchestration
+- agent configuration, runtime construction, and concurrent run orchestration
+- Per-user concurrency limits, cancellation, retries, and run isolation
+- Permission-aware context retrieval and tool grants
+- Traceable artifacts and agent-to-agent handoffs
 - Decision policy execution
 - Opportunity collection and analysis
 - Pub/Sub message publishing and consuming
@@ -310,19 +377,26 @@ The AI system is split into clearly separated layers:
                        │
                        ▼
 ┌─────────────────────────────────────────────────┐
+│             ROUTING + ORCHESTRATION LAYER        │
+│  Resolve target agent(s), create run records,   │
+│  enforce grants/concurrency, dispatch workers    │
+└──────────────────────┬──────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────┐
 │              CONTEXT RETRIEVAL LAYER             │
-│  Load user profile, skills, recent observations, │
-│  recent messages, connected repos                │
+│  Load agent config and permitted private/shared │
+│  context; never inject unrestricted user context │
 └──────────────────────┬──────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────┐
 │                 AI REASONING LAYER               │
-│  ADK Agent + Gemini                              │
-│  - Analyzes input with full context              │
+│  agent runtime instance (ADK + Gemini)          │
+│  - Analyzes input with authorized context        │
 │  - Produces structured output                    │
-│  - May call tools for additional info            │
-│  - Returns: analysis, recommendations, response  │
+│  - Calls only tools granted to this agent       │
+│  - Can propose an explicit handoff               │
 └──────────────────────┬──────────────────────────┘
                        │
                        ▼
@@ -333,6 +407,7 @@ The AI system is split into clearly separated layers:
 │  - OpportunityRelevance                          │
 │  - ChatResponse                                  │
 │  - ObservationData                               │
+│  - RunUpdate / Artifact / HandoffRequest         │
 └──────────────────────┬──────────────────────────┘
                        │
                        ▼
@@ -353,21 +428,30 @@ The AI system is split into clearly separated layers:
 │  - Update skill scores                           │
 │  - Send Telegram notification                    │
 │  - Store decision record                         │
+│  - Update run status and persist artifacts       │
+│  - Publish approved handoffs as new assignments  │
 │  - Return chat response                          │
 └─────────────────────────────────────────────────┘
 ```
 
-### 5.2 Agent Design (ADK)
+### 5.2 Agent Runtime Design (ADK)
 
-**Agent Name:** `mark1_agent`
+**Runtime identity:** `agent:{agentId}`; every execution also carries a unique `runId`.
 
 **Model:** `gemini-2.0-flash` (or `gemini-1.5-pro` for complex analysis)
 
-**System Prompt:** Varies by context (chat, analysis, opportunity). Always includes:
-- User profile (goal, intensity, language)
-- Current skill snapshot
-- Recent observations (last N)
-- Persona instructions (chill/normal/brutal)
+**Agent configuration:** Stored data, not a hard-coded singleton. It includes:
+- Display identity: name and role
+- Objective and user-authored instructions
+- Template type (`mentor`, `designer`, or `custom`)
+- Tone and notification policy
+- Granted tools and integrations
+- Private context scope and allowed shared workspace sources
+- Lifecycle state (`active`, `paused`, `archived`)
+
+**Prompt assembly:** The runtime composes the system prompt from platform safety rules, agent configuration, assignment, and authorized context. Template prompts provide editable defaults; they do not create separate code paths.
+
+**Execution model:** The orchestrator creates one durable run record per assignment, dispatches independent runs through Pub/Sub workers, and allows multiple agents to execute concurrently. Run transitions are `queued → running → waiting-for-user | completed | failed | cancelled`. One failed run cannot terminate unrelated work.
 
 **Tools:**
 
@@ -383,6 +467,10 @@ The AI system is split into clearly separated layers:
 | `search_opportunities` | Query opportunity sources | Read |
 | `query_github_repos` | Get info about connected repos | Read |
 | `explain_decision_policy` | Explain why a decision was made | Read |
+| `read_shared_artifact` | Read an explicitly shared workspace artifact | Read |
+| `publish_artifact` | Persist an output and attach it to the run | Write |
+| `request_handoff` | Propose work for another agent with a traceable payload | Action |
+| `update_run_status` | Publish progress or a blocker to the run timeline | Write |
 
 ### 5.3 Critical Boundary: Agent vs. Business Logic
 
@@ -395,6 +483,11 @@ The AI system is split into clearly separated layers:
 | "Is this opportunity relevant?" | Agent (Gemini) | Requires semantic matching |
 | "What intensity threshold to use?" | Decision Policy (Python) | Configuration, not AI |
 | "What tone to use in messages?" | Agent (Gemini) | Persona-aware natural language |
+| "Which agent is explicitly addressed?" | Router (Python) | Deterministic identity selection |
+| "May this agent use a tool or read context?" | Authorization policy (Python) | Must be enforceable and auditable |
+| "Can another run start now?" | Orchestrator (Python) | Concurrency and budget enforcement |
+| "What work should a specialist perform?" | Agent (Gemini) | Role-specific reasoning within assignment |
+| "Should a handoff execute?" | Handoff policy + user grants | Prevents uncontrolled delegation |
 
 ### 5.4 Skill Update Formula
 
@@ -642,6 +735,26 @@ service cloud.firestore {
         allow read: if request.auth != null && request.auth.uid == uid;
         allow write: if false;
       }
+
+      match /agents/{agentId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+
+      match /runs/{runId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+
+      match /artifacts/{artifactId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+
+      match /handoffs/{handoffId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
     }
   }
 }
@@ -653,10 +766,25 @@ service cloud.firestore {
 
 ### 8.1 Frontend
 
-- **Build:** `next build && next export` (static export)
-- **Host:** Firebase Hosting
-- **Deploy:** `firebase deploy --only hosting`
-- **URL:** `https://<project>.web.app`
+- **Current build:** `npm run build` (`next build`)
+- **Runtime requirement:** the current app has dynamic routes and server-rendered request parameters; it is not documented as a static export.
+- **Hosting decision:** use a Firebase/Google deployment option that supports the Next.js runtime, or explicitly change the route/runtime architecture for static export before deployment.
+- **Validation:** build once with explicit local-preview configuration and once with explicit remote configuration.
+- **Security:** frontend environment files contain browser-safe `NEXT_PUBLIC_*` values only.
+
+Browser-safe frontend variables:
+
+| Variable | Description |
+|----------|-------------|
+| `NEXT_PUBLIC_FIREBASE_API_KEY` | Firebase web client API key |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Firebase Auth domain |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Firebase project ID |
+| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Firebase storage bucket |
+| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender ID |
+| `NEXT_PUBLIC_FIREBASE_APP_ID` | Firebase web app ID |
+| `NEXT_PUBLIC_API_URL` | Backend `/api/v1` base URL |
+| `NEXT_PUBLIC_DATA_MODE` | Explicit `local` or remote/Firebase adapter selection |
+| `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | Public Telegram bot username |
 
 ### 8.2 Backend
 
@@ -691,11 +819,13 @@ service cloud.firestore {
 
 ## 9. Technology Decision Summary
 
-See [DECISIONS.md](file:///Users/macbook/Yernur/projects/Mark-I/docs/DECISIONS.md) for detailed ADRs.
+See [DECISIONS.md](DECISIONS.md) for detailed ADRs.
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Frontend framework | Next.js | SSR support, React ecosystem, Firebase integration |
+| Frontend framework | Next.js 16 App Router | React ecosystem, dynamic route support, Firebase integration |
+| Product/technical naming | Agent everywhere | One consistent domain term across UI, API, storage, and runtime |
+| Dashboard direction | Freeze the existing chat-first UI | Refactor services/state and connect the backend without visual or layout changes |
 | Backend framework | FastAPI | Async Python, auto-docs, type safety |
 | Database | Firestore | Firebase ecosystem, realtime, serverless |
 | Auth | Firebase Auth | Multi-provider, client SDK, token verification |
