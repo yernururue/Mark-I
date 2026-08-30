@@ -16,8 +16,9 @@ from typing import Optional
 
 # Импортируем тип FirestoreClient для подсказок в коде
 from google.cloud.firestore_v1.client import Client as FirestoreClient
-from google.cloud.firestore_v1.base_query import FieldFilter
+from google.api_core.exceptions import AlreadyExists
 
+from app.errors import ConflictError
 from app.models.user import CreateProfileRequest, UpdateProfileRequest, UserProfile
 
 
@@ -75,17 +76,23 @@ class UserService:
             "linkCodeExpiresAt": None,
             "githubConnected": False,
             "githubUsername": None,
+            "githubUserId": None,
             "githubTokenSecretName": None,
             "connectedRepos": [],
             "webhookIds": {},
             "skills": {},
+            "skillSignals": {},
             "onboardingCompleted": True,
             "createdAt": now,
             "updatedAt": now,
         }
 
-        # Метод set() кладет наш словарь в базу. При этом мы сами задаем ID документа (uid).
-        self._collection.document(uid).set(doc_data)
+        # ``create`` is an atomic exists=false precondition. A read followed by
+        # set would let two onboarding requests overwrite each other's profile.
+        try:
+            self._collection.document(uid).create(doc_data)
+        except AlreadyExists as exc:
+            raise ConflictError("Profile already exists") from exc
 
         # Возвращаем созданный профиль обратно (чтобы API могло отдать его фронтенду)
         return self._firestore_to_profile(doc_data)
@@ -123,11 +130,19 @@ class UserService:
         """
         Ищет пользователя по telegramUserId и возвращает его uid.
         """
-        # В Firestore можно использовать query
-        users_ref = self._collection.where(filter=FieldFilter("telegramUserId", "==", telegram_user_id)).limit(1).get()
-        if not users_ref:
+        # ``telegram_identities`` is the transactionally maintained one-to-one
+        # index. Querying users directly made duplicate historical links pick
+        # an arbitrary owner and confused group-chat IDs with person IDs.
+        identity = self._db.collection("telegram_identities").document(str(telegram_user_id)).get()
+        if not identity.exists:
             return None
-        return users_ref[0].id
+        uid = (identity.to_dict() or {}).get("uid")
+        if not isinstance(uid, str) or not uid:
+            return None
+        user = self._collection.document(uid).get()
+        if not user.exists or (user.to_dict() or {}).get("telegramUserId") != telegram_user_id:
+            return None
+        return uid
 
     def _firestore_to_profile(self, data: dict) -> UserProfile:
         """

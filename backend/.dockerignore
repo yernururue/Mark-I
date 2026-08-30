@@ -1,0 +1,11 @@
+.env
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.log
+venv/
+tests/
+docs/
+scripts/
+firebase.emulator.json
+firestore.indexes.json

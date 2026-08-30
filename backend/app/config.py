@@ -12,6 +12,12 @@ class RuntimeRole(StrEnum):
     OPPORTUNITY_WORKER = "opportunity-worker"
 
 
+class RuntimeEnvironment(StrEnum):
+    DEVELOPMENT = "development"
+    TEST = "test"
+    PRODUCTION = "production"
+
+
 class ConfigurationError(RuntimeError):
     """Sanitised startup configuration failure."""
 
@@ -29,11 +35,12 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_ID: str | None = None
     GITHUB_CLIENT_SECRET: str | None = None
     GITHUB_WEBHOOK_SECRET: str | None = None
+    SCHEDULER_SHARED_SECRET: str | None = None
     PUBSUB_GITHUB_TOPIC: str = "github-events"
     PUBSUB_OPPORTUNITY_TOPIC: str = "opportunity-collect"
     WEBHOOK_BASE_URL: str | None = None
     FRONTEND_URL: str = "http://localhost:3000"
-    ENV: str = "development"
+    ENV: RuntimeEnvironment = RuntimeEnvironment.DEVELOPMENT
 
     model_config = SettingsConfigDict(
         # Look for .env in current directory and parent directory
@@ -49,6 +56,20 @@ class Settings(BaseSettings):
             RuntimeRole.OPPORTUNITY_WORKER: ("GCP_PROJECT_ID",),
         }[role]
         missing = [name for name in required if not getattr(self, name)]
+        if self.ENV is RuntimeEnvironment.PRODUCTION:
+            production_required = {
+                RuntimeRole.API: (
+                    "WEBHOOK_BASE_URL",
+                    "TELEGRAM_BOT_TOKEN",
+                    "TELEGRAM_BOT_USERNAME",
+                    "TELEGRAM_WEBHOOK_URL",
+                    "TELEGRAM_WEBHOOK_SECRET",
+                    "SCHEDULER_SHARED_SECRET",
+                ),
+                RuntimeRole.GITHUB_WORKER: ("TELEGRAM_BOT_TOKEN",),
+                RuntimeRole.OPPORTUNITY_WORKER: ("TELEGRAM_BOT_TOKEN",),
+            }[role]
+            missing.extend(name for name in production_required if not getattr(self, name))
         if missing:
             raise ConfigurationError(f"Missing required configuration for role {role}: {', '.join(missing)}")
 

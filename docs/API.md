@@ -42,13 +42,16 @@ All errors return a consistent JSON structure:
 
 | HTTP Status | Code | Description |
 |------------|------|-------------|
+| 400 | `BAD_REQUEST` | Malformed external webhook payload |
 | 401 | `UNAUTHORIZED` | Missing or invalid Firebase token |
 | 403 | `FORBIDDEN` | Token valid but access denied |
 | 404 | `NOT_FOUND` | Resource not found |
+| 405 | `METHOD_NOT_ALLOWED` | Unsupported method for a known path |
 | 409 | `CONFLICT` | Resource already exists |
 | 422 | `VALIDATION_ERROR` | Invalid request body |
 | 429 | `RATE_LIMITED` | Too many requests |
 | 500 | `INTERNAL_ERROR` | Server error |
+| 503 | `SERVICE_UNAVAILABLE` | Webhook is not configured or the same delivery is still processing |
 
 ---
 
@@ -259,7 +262,7 @@ Get all skills for the authenticated user.
 }
 ```
 
-`trend` values: `"up"` (increased in last 3 observations), `"down"` (decreased), `"stable"` (no significant change), `"new"` (fewer than 3 observations)
+`trend` values are derived from persisted skill score signals, not request-time placeholders: `"up"`/`"down"` compare the retained score history, `"stable"` means no persisted directional change, and `"new"` means fewer than three observations. `lastUpdated` is the persisted signal/activity time, never the dashboard request time.
 
 ---
 
@@ -281,6 +284,8 @@ Get observations for the authenticated user, with pagination and filters.
 | `cursor` | string | null | Opaque cursor from the previous response (`createdAt` + document ID tie-breaker) |
 | `source` | string | null | Filter by source: `github`, `opportunity`, `chat` |
 | `concept` | string | null | Filter by concept name |
+
+Pages are ordered by `(createdAt DESC, document ID DESC)`. The cursor encodes both values; records inserted before a previously issued cursor belong to a newer logical snapshot and do not appear on the next page.
 
 **Response 200:**
 ```json
@@ -322,7 +327,8 @@ Send a message to the AI agent. The agent processes the message with full user c
 ```json
 {
   "message": "Why did you notify me about that last commit?",
-  "channel": "web"
+  "channel": "web",
+  "turnId": "web-6f0d2b56-1"
 }
 ```
 
@@ -330,6 +336,7 @@ Send a message to the AI agent. The agent processes the message with full user c
 |-------|------|----------|--------|
 | `message` | string | yes | 1-2000 chars |
 | `channel` | string | yes | `"web"`, `"telegram"` |
+| `turnId` | string | no | Client idempotency key, 1-256 chars; cannot be reused for a different prompt/channel |
 
 **Response 200:**
 ```json
@@ -340,7 +347,7 @@ Send a message to the AI agent. The agent processes the message with full user c
 }
 ```
 
-**Note:** Both the user message and agent response are automatically stored in Firestore `users/{uid}/messages/`. Frontend can also listen to this collection for realtime updates.
+**Note:** Both the user message and agent response are automatically stored in Firestore `users/{uid}/messages/`. Repeating a completed `turnId` returns the original response and IDs; a concurrent turn for the same user receives `409` rather than attaching its reply to the wrong prompt. Frontend can also listen to this collection for realtime updates.
 
 ---
 
@@ -357,6 +364,8 @@ Get chat message history.
 | `limit` | int | 50 | Max messages to return (1-200) |
 | `cursor` | string | null | Opaque cursor from the previous response (`createdAt` + document ID tie-breaker) |
 | `channel` | string | null | Filter by channel: `web`, `telegram` |
+
+Message pages use `(createdAt ASC, document ID ASC)` with the same no-duplicate cursor rule.
 
 **Response 200:**
 ```json
@@ -500,6 +509,8 @@ Disconnect GitHub entirely. Removes webhooks and token.
 
 Generate a Telegram link code for the authenticated user.
 
+The six-character code expires after ten minutes and is one-time. It is stored only as a hash. Complete `/link CODE` in a **private** bot chat: `message.from.id` is the unique account identity and the private `chat.id` is the notification destination. Group chats never link or read an account.
+
 **Authentication:** Required  
 
 **Response 200:**
@@ -569,8 +580,10 @@ X-GitHub-Delivery: <delivery-id>
 
 Receive Telegram bot updates. Validated via `X-Telegram-Bot-Api-Secret-Token`.
 
-**Authentication:** Secret token in URL path  
+**Authentication:** `X-Telegram-Bot-Api-Secret-Token` header (constant-time verified)
 **Content-Type:** `application/json`
+
+The secret is mandatory. Repeated `update_id` values are deduplicated transactionally; an active in-progress lease returns 503 so Telegram can retry safely.
 
 **Request:** Telegram Update object
 
@@ -580,6 +593,10 @@ Receive Telegram bot updates. Validated via `X-Telegram-Bot-Api-Secret-Token`.
   "ok": true
 }
 ```
+
+**Response 400:** missing/invalid `update_id`
+**Response 401:** invalid or missing secret token
+**Response 503:** webhook secret is not configured or this update is still processing
 
 ---
 
@@ -592,13 +609,13 @@ These are NOT HTTP endpoints. They are triggered by Pub/Sub or Cloud Scheduler.
 - **Trigger:** Pub/Sub message on `github-events` topic
 - **Processor:** GitHub worker
 - **Actions:** Gemini analysis → observation → skill update → decision policy → notification
-- **Idempotency:** Deduplicated by GitHub delivery ID in `processed_events/{deliveryId}`
+- **Idempotency:** physical delivery IDs are audited, while business effects are deduplicated by `activityId + uid` in `processed_events/{github:activityId:uid}`
 
 ### Opportunity Collection
 
-- **Trigger:** Cloud Scheduler → Pub/Sub `opportunity-collect`
+- **Trigger:** Cloud Scheduler → authenticated `POST /api/v1/trigger/opportunities` → Pub/Sub `opportunity-collect`
 - **Processor:** Opportunity worker
-- **Actions:** Fetch sources → Gemini relevance → observation → decision policy → notification
+- **Actions:** source collection/replay → strict Gemini relevance → per-user observation → decision policy → notification
 - **Runs for:** Each user with a configured goal
 
 ---

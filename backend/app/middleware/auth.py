@@ -11,13 +11,28 @@ Middleware — это охранник на входе в клуб.
 
 # HTTPException нужен, чтобы прервать запрос и вернуть ошибку (например, 401 - Нет доступа).
 # Request содержит всю информацию о входящем запросе от пользователя.
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 # auth из firebase_admin умеет проверять подлинность пропусков (токенов).
 from firebase_admin import auth
 
 
-async def get_current_user(request: Request) -> dict:
+# This describes the same Firebase bearer token that is verified below. Keeping
+# it as a FastAPI security dependency makes generated OpenAPI advertise the
+# actual authentication requirement instead of relying on handwritten YAML.
+firebase_auth_scheme = HTTPBearer(
+    auto_error=False,
+    scheme_name="firebaseAuth",
+    bearerFormat="Firebase ID Token",
+    description="Firebase Auth ID token obtained from the signed-in user.",
+)
+
+
+async def get_current_user(
+    request: Request,
+    _: HTTPAuthorizationCredentials | None = Security(firebase_auth_scheme),
+) -> dict:
     """
     Эта функция работает как охранник. 
     Она берет токен из заголовка запроса и расшифровывает его.

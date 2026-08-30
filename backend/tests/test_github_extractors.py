@@ -8,7 +8,14 @@ from workers.github_extractors import EVENT_EXTRACTORS, UnsupportedGitHubEvent, 
 
 def envelope(event_type: str, payload: dict) -> GitHubEventEnvelope:
     return GitHubEventEnvelope(
-        deliveryId="delivery-1", eventType=event_type, uid="user-1", repoFullName="alex/repo", payload=payload
+        deliveryId="delivery-1",
+        activityId="github:activity-1",
+        eventType=event_type,
+        uid="user-1",
+        repoFullName="alex/repo",
+        actorLogin="alex",
+        actorId=42,
+        payload=payload,
     )
 
 

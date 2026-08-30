@@ -50,6 +50,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/v1/me:
     get:
@@ -70,6 +72,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
     post:
       operationId: createProfile
@@ -120,6 +124,8 @@ paths:
                 $ref: '#/components/schemas/UserProfile'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationError'
 
@@ -157,6 +163,8 @@ paths:
                 $ref: '#/components/schemas/DashboardResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/v1/skills:
     get:
@@ -175,6 +183,8 @@ paths:
                 $ref: '#/components/schemas/SkillsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/v1/observations:
     get:
@@ -197,17 +207,20 @@ paths:
           in: query
           schema:
             type: string
+            nullable: true
           description: Pagination cursor from previous response
         - name: source
           in: query
           schema:
             type: string
             enum: [github, opportunity, chat]
+            nullable: true
           description: Filter by observation source
         - name: concept
           in: query
           schema:
             type: string
+            nullable: true
           description: Filter by concept name
       responses:
         '200':
@@ -218,6 +231,8 @@ paths:
                 $ref: '#/components/schemas/ObservationsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/v1/chat:
     post:
@@ -266,12 +281,14 @@ paths:
           in: query
           schema:
             type: string
+            nullable: true
           description: Pagination cursor
         - name: channel
           in: query
           schema:
             type: string
             enum: [web, telegram]
+            nullable: true
           description: Filter by channel
       responses:
         '200':
@@ -282,6 +299,8 @@ paths:
                 $ref: '#/components/schemas/MessagesResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/v1/github/auth-url:
     get:
@@ -300,6 +319,8 @@ paths:
                 $ref: '#/components/schemas/GitHubAuthUrlResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/v1/github/callback:
     post:
@@ -330,6 +351,8 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/v1/github/repos:
     get:
@@ -354,6 +377,8 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
     post:
       operationId: selectGithubRepos
@@ -377,6 +402,8 @@ paths:
                 $ref: '#/components/schemas/SelectReposResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/v1/github/disconnect:
     delete:
@@ -400,6 +427,8 @@ paths:
                 required: [disconnected]
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/v1/telegram/link:
     post:
@@ -424,6 +453,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/v1/telegram/unlink:
     delete:
@@ -447,6 +478,8 @@ paths:
                 required: [unlinked]
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/v1/webhooks/github:
     post:
@@ -482,6 +515,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: true
               description: Raw GitHub webhook payload (varies by event type)
       responses:
         '200':
@@ -489,21 +523,15 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [accepted, deliveryId]
-                properties:
-                  accepted:
-                    type: boolean
-                    example: true
-                  deliveryId:
-                    type: string
-                    example: "delivery-id-xxx"
+                $ref: '#/components/schemas/GitHubWebhookResponse'
         '401':
           description: Invalid signature
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/v1/webhooks/telegram:
     post:
@@ -513,12 +541,20 @@ paths:
       description: |
         Receive Telegram bot updates. Validated via secret token.
         NOT called by frontend — called by Telegram.
+      parameters:
+        - name: X-Telegram-Bot-Api-Secret-Token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Secret token configured for Telegram webhook delivery
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              additionalProperties: true
               description: Telegram Update object
       responses:
         '200':
@@ -526,12 +562,27 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [ok]
-                properties:
-                  ok:
-                    type: boolean
-                    example: true
+                $ref: '#/components/schemas/TelegramWebhookResponse'
+        '400':
+          description: Invalid update payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid Telegram secret token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          description: Telegram update is processing or webhook is not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
 components:
   securitySchemes:
@@ -630,6 +681,8 @@ components:
           example: user@example.com
         displayName:
           type: string
+          minLength: 1
+          maxLength: 100
           example: Alex Dev
         goal:
           type: string
@@ -643,6 +696,7 @@ components:
         language:
           type: string
           enum: [en, ru]
+          default: en
           example: en
         telegramLinked:
           type: boolean
@@ -670,6 +724,7 @@ components:
 
     CreateProfileRequest:
       type: object
+      additionalProperties: false
       required: [displayName, goal, intensity]
       properties:
         displayName:
@@ -695,6 +750,7 @@ components:
 
     UpdateProfileRequest:
       type: object
+      additionalProperties: false
       properties:
         displayName:
           type: string
@@ -768,6 +824,7 @@ components:
           example: up
         observationCount:
           type: integer
+          minimum: 0
           example: 5
         lastUpdated:
           type: string
@@ -868,7 +925,7 @@ components:
           example: []
         deliveryStatus:
           type: string
-          enum: [pending, sent, skipped, failed]
+          enum: [pending, sending, sent, suppressed, failed, unknown]
           example: sent
         reason:
           type: string
@@ -897,6 +954,7 @@ components:
 
     ChatRequest:
       type: object
+      additionalProperties: false
       required: [message, channel]
       properties:
         message:
@@ -908,6 +966,12 @@ components:
           type: string
           enum: [web, telegram]
           example: web
+        turnId:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 256
+          description: Client-generated idempotency key for one chat turn
 
     ChatResponse:
       type: object
@@ -968,6 +1032,7 @@ components:
         authUrl:
           type: string
           format: uri
+          minLength: 1
           example: "https://github.com/login/oauth/authorize?client_id=xxx&redirect_uri=xxx&scope=repo&state=xxx"
 
     GitHubCallbackRequest:
@@ -1046,6 +1111,7 @@ components:
       properties:
         linkCode:
           type: string
+          pattern: '^[A-Z0-9]{6}$'
           example: A3X9K2
         expiresAt:
           type: string
@@ -1053,3 +1119,19 @@ components:
         botUsername:
           type: string
           example: mark1_dev_bot
+
+    GitHubWebhookResponse:
+      type: object
+      required: [accepted, deliveryId]
+      properties:
+        accepted:
+          type: boolean
+        deliveryId:
+          type: string
+
+    TelegramWebhookResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean

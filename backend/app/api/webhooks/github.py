@@ -1,11 +1,11 @@
 """
 github.py — Webhook receiver для событий от GitHub.
 """
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
-from google.cloud.firestore_v1.client import Client as FirestoreClient
-import httpx
-from google.cloud import pubsub_v1, secretmanager
+from typing import Literal
 
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
+
+from app.api.contracts import error_responses
 from app.dependencies import get_github_service
 from app.services.github_service import GitHubService
 from app.models.common import GitHubWebhookResponse
@@ -16,12 +16,12 @@ router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 
 
 
-@router.post("/github", response_model=GitHubWebhookResponse)
+@router.post("/github", response_model=GitHubWebhookResponse, responses=error_responses(401, 422), operation_id="receiveGithubWebhook")
 async def receive_github_webhook(
     request: Request,
     payload: dict = Body(...),
     x_hub_signature_256: str = Header(..., alias="X-Hub-Signature-256"),
-    x_github_event: str = Header(..., alias="X-GitHub-Event"),
+    x_github_event: Literal["push", "pull_request", "pull_request_review", "issues", "issue_comment", "create"] = Header(..., alias="X-GitHub-Event"),
     x_github_delivery: str = Header(..., alias="X-GitHub-Delivery"),
     service: GitHubService = Depends(get_github_service),
 ):

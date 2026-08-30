@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List
 from pydantic import BaseModel
 
-from app.models.skill import SkillDetail
+from app.models.skill import SkillSummary
 from app.models.observation import Observation
 from app.models.decision import Decision
 
@@ -13,7 +13,7 @@ class DashboardStats(BaseModel):
     lastActivityAt: datetime | None
 
 class DashboardResponse(BaseModel):
-    skills: List[SkillDetail]
+    skills: List[SkillSummary]
     recentObservations: List[Observation]
     recentDecisions: List[Decision]
     stats: DashboardStats

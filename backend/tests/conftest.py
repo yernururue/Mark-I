@@ -11,12 +11,13 @@ _TEST_ENV = {
     "GEMINI_MODEL": "gemini-test",
     "TELEGRAM_BOT_TOKEN": "telegram-test-token",
     "TELEGRAM_BOT_USERNAME": "mark_i_test_bot",
+    "TELEGRAM_WEBHOOK_SECRET": "telegram-test-webhook-secret",
     "GITHUB_CLIENT_ID": "github-test-client",
     "GITHUB_CLIENT_SECRET": "github-test-secret",
     "GITHUB_WEBHOOK_SECRET": "github-test-webhook-secret",
+    "SCHEDULER_SHARED_SECRET": "scheduler-test-secret",
     "FRONTEND_URL": "http://localhost:3000",
 }
 
 for _name, _value in _TEST_ENV.items():
     os.environ[_name] = _value
-

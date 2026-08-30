@@ -100,9 +100,12 @@ def test_firestore_queries_use_supported_filter_objects():
 def test_github_webhook_and_worker_share_event_schema():
     envelope = GitHubEventEnvelope(
         deliveryId="delivery-1",
+        activityId="github:activity-1",
         eventType="push",
         uid="user-1",
         repoFullName="alex/repo",
+        actorLogin="alex",
+        actorId=42,
         payload={},
     )
     assert decode_github_event_envelope(envelope.model_dump_json().encode()) == envelope
@@ -118,19 +121,16 @@ def test_all_documented_github_events_extract_analysis_text():
     }
 
 
-@pytest.mark.xfail(strict=True, reason="The scheduler trigger is public and has no OIDC/shared-secret/Firebase guard.")
 def test_opportunity_trigger_requires_authentication():
     source = BACKEND_ROOT.joinpath("app/api/v1/triggers.py").read_text()
     assert "get_current_user" in source or "Authorization" in source or "x_scheduler_secret" in source
 
 
-@pytest.mark.xfail(strict=True, reason="When TELEGRAM_WEBHOOK_SECRET is unset, every Telegram webhook request is accepted.")
 def test_telegram_webhook_secret_is_mandatory():
     source = BACKEND_ROOT.joinpath("app/api/webhooks/telegram.py").read_text()
     assert "if not secret" in source and "status_code=503" in source
 
 
-@pytest.mark.xfail(strict=True, reason="Opportunity processing returns before logging a decision for users without Telegram.")
 def test_unlinked_users_still_receive_opportunity_observation_and_decision():
     source = BACKEND_ROOT.joinpath("workers/opportunity_worker.py").read_text()
     assert "if not goal or not telegram_user_id" not in source
@@ -138,7 +138,7 @@ def test_unlinked_users_still_receive_opportunity_observation_and_decision():
 
 def test_chat_request_matches_openapi_schema():
     schema = ChatRequest.model_json_schema()
-    assert set(schema["properties"]) == {"message", "channel"}
+    assert set(schema["properties"]) == {"message", "channel", "turnId"}
     assert schema["properties"]["message"]["maxLength"] == 2000
     assert schema["properties"]["message"]["minLength"] == 1
 
@@ -187,7 +187,6 @@ def test_decision_model_matches_firestore_contract():
     }
 
 
-@pytest.mark.xfail(strict=True, reason="Cloud Build deploys with only ENV, despite required runtime settings and secrets.")
 def test_cloudbuild_supplies_required_runtime_configuration():
     source = BACKEND_ROOT.joinpath("cloudbuild.yaml").read_text()
     for variable in (
@@ -198,5 +197,6 @@ def test_cloudbuild_supplies_required_runtime_configuration():
         "GITHUB_CLIENT_ID",
         "GITHUB_CLIENT_SECRET",
         "GITHUB_WEBHOOK_SECRET",
+        "SCHEDULER_SHARED_SECRET",
     ):
         assert variable in source

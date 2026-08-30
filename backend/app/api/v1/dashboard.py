@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, Query
 
+from app.api.contracts import error_responses
 from app.dependencies import get_current_user_id, get_dashboard_service
 from app.models.dashboard import DashboardResponse
 from app.services.dashboard_service import DashboardService
 
 router = APIRouter(tags=["Dashboard"])
 
-@router.get("/dashboard", response_model=DashboardResponse)
+@router.get("/dashboard", response_model=DashboardResponse, responses=error_responses(401, 422), operation_id="getDashboard")
 async def get_dashboard(
     observationLimit: int = Query(10, ge=1, le=50),
     decisionLimit: int = Query(5, ge=1, le=20),

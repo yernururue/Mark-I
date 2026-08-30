@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from itertools import count
 from typing import Any, Iterable
 
+from google.api_core.exceptions import AlreadyExists
+
 
 @dataclass
 class FakeSnapshot:
@@ -147,6 +149,11 @@ class FakeDocument:
 
     def set(self, data: dict[str, Any]) -> None:
         self._db.documents[self._path] = dict(data)
+
+    def create(self, data: dict[str, Any]) -> None:
+        if self._path in self._db.documents:
+            raise AlreadyExists("document already exists")
+        self.set(data)
 
     def update(self, data: dict[str, Any]) -> None:
         current = self._db.documents.setdefault(self._path, {})

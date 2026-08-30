@@ -23,9 +23,34 @@ steps:
       - 'managed'
       - '--allow-unauthenticated'
       - '--set-env-vars'
-      - 'ENV=production'
+      - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,FIRESTORE_DATABASE=mark-i,WEBHOOK_BASE_URL=${_WEBHOOK_BASE_URL},TELEGRAM_BOT_USERNAME=${_TELEGRAM_BOT_USERNAME},TELEGRAM_WEBHOOK_URL=${_TELEGRAM_WEBHOOK_URL},FRONTEND_URL=${_FRONTEND_URL}'
+      - '--set-secrets'
+      - 'TELEGRAM_BOT_TOKEN=mark-i-telegram-bot-token:latest,TELEGRAM_WEBHOOK_SECRET=mark-i-telegram-webhook-secret:latest,GITHUB_CLIENT_ID=mark-i-github-client-id:latest,GITHUB_CLIENT_SECRET=mark-i-github-client-secret:latest,GITHUB_WEBHOOK_SECRET=mark-i-github-webhook-secret:latest,SCHEDULER_SHARED_SECRET=mark-i-scheduler-shared-secret:latest'
 
-  # Deploy Opportunity Worker to Cloud Run (as a separate service without public access, or a Job)
+  # Deploy the durable GitHub consumer with its own runtime role.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'mark-i-github-worker'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/mark-i-backend:$COMMIT_SHA'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--no-allow-unauthenticated'
+      - '--command'
+      - 'uvicorn'
+      - '--args'
+      - 'app.worker_apps:github_app,--host,0.0.0.0,--port,8080'
+      - '--set-env-vars'
+      - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,FIRESTORE_DATABASE=mark-i'
+      - '--set-secrets'
+      - 'TELEGRAM_BOT_TOKEN=mark-i-telegram-bot-token:latest'
+
+  # Deploy the opportunity consumer as a private Pub/Sub-push Cloud Run service.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -40,11 +65,33 @@ steps:
       - 'managed'
       - '--no-allow-unauthenticated'
       - '--command'
-      - 'python'
+      - 'uvicorn'
       - '--args'
-      - '-m,workers.opportunity_worker'
+      - 'app.worker_apps:opportunity_app,--host,0.0.0.0,--port,8080'
       - '--set-env-vars'
-      - 'ENV=production'
+      - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,FIRESTORE_DATABASE=mark-i'
+      - '--set-secrets'
+      - 'TELEGRAM_BOT_TOKEN=mark-i-telegram-bot-token:latest'
+
+  # Pub/Sub invokes the private worker services with a dedicated OIDC identity.
+  # The deploy trigger service account needs permission to configure these bindings.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-ceu'
+      - |
+        for service in mark-i-github-worker mark-i-opportunity-worker; do
+          gcloud run services add-iam-policy-binding "$${service}" \
+            --region=us-central1 \
+            --member="serviceAccount:${_PUBSUB_PUSH_SERVICE_ACCOUNT}" \
+            --role=roles/run.invoker
+        done
+        gcloud pubsub subscriptions modify-push-config github-events-sub \
+          --push-endpoint="$$(gcloud run services describe mark-i-github-worker --region=us-central1 --format='value(status.url)')" \
+          --push-auth-service-account="${_PUBSUB_PUSH_SERVICE_ACCOUNT}"
+        gcloud pubsub subscriptions modify-push-config opportunity-collect-sub \
+          --push-endpoint="$$(gcloud run services describe mark-i-opportunity-worker --region=us-central1 --format='value(status.url)')" \
+          --push-auth-service-account="${_PUBSUB_PUSH_SERVICE_ACCOUNT}"
 
 images:
   - 'gcr.io/$PROJECT_ID/mark-i-backend:$COMMIT_SHA'

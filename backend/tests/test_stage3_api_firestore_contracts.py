@@ -54,6 +54,61 @@ def _json_schema(operation: dict, kind: str) -> dict | None:
     return None
 
 
+def _resolve_response(spec: dict, response: dict) -> dict:
+    while "$ref" in response:
+        response = spec["components"]["responses"][response["$ref"].rsplit("/", 1)[-1]]
+    return response
+
+
+def _material_schema(spec: dict, schema: dict) -> dict:
+    """Keep only contract semantics, recursively resolving generated refs.
+
+    Titles, examples and implementation prose do not affect clients. Required
+    fields, nullability, enums, bounds, defaults and nested response shapes do.
+    """
+    # Pydantic uses a reference plus a sibling ``default`` for enum fields;
+    # OpenAPI permits that composition, so retain those sibling constraints.
+    if "$ref" in schema:
+        referenced = _resolve(spec, {"$ref": schema["$ref"]})
+        schema = {**referenced, **{key: value for key, value in schema.items() if key != "$ref"}}
+    if "anyOf" in schema:
+        non_null = [item for item in schema["anyOf"] if item.get("type") != "null"]
+        if len(non_null) == 1 and len(non_null) != len(schema["anyOf"]):
+            result = _material_schema(spec, non_null[0])
+            result["nullable"] = True
+            if "default" in schema:
+                result["default"] = schema["default"]
+            return result
+    result = {
+        key: schema[key]
+        for key in (
+            "type", "format", "enum", "minimum", "maximum", "minLength",
+            "maxLength", "pattern", "default", "nullable",
+        )
+        if key in schema
+    }
+    if "properties" in schema:
+        result["properties"] = {
+            name: _material_schema(spec, value)
+            for name, value in schema["properties"].items()
+        }
+    if "required" in schema:
+        result["required"] = sorted(schema["required"])
+    if "items" in schema:
+        result["items"] = _material_schema(spec, schema["items"])
+    if "additionalProperties" in schema:
+        value = schema["additionalProperties"]
+        result["additionalProperties"] = (
+            _material_schema(spec, value) if isinstance(value, dict) else value
+        )
+    return result
+
+
+def _response_schema(spec: dict, response: dict) -> dict | None:
+    response = _resolve_response(spec, response)
+    return response.get("content", {}).get("application/json", {}).get("schema")
+
+
 def test_canonical_openapi_matches_fastapi_paths_methods_and_top_level_shapes():
     canonical = yaml.safe_load(CANONICAL_OPENAPI.read_text())
     generated = app.openapi()
@@ -77,6 +132,48 @@ def test_canonical_openapi_matches_fastapi_paths_methods_and_top_level_shapes():
                     assert _shape(generated, actual_schema) == _shape(canonical, expected_schema), (path, method, kind)
 
 
+def test_canonical_openapi_matches_generated_security_parameters_and_deep_schemas():
+    canonical = yaml.safe_load(CANONICAL_OPENAPI.read_text())
+    generated = app.openapi()
+    for path, canonical_path in canonical["paths"].items():
+        for method, expected in canonical_path.items():
+            if method not in {"get", "post", "patch", "delete"}:
+                continue
+            actual = generated["paths"][path][method]
+            assert actual["operationId"] == expected["operationId"], (path, method)
+            assert actual.get("security") == expected.get("security"), (path, method)
+            expected_parameters = {
+                (parameter["name"].lower(), parameter["in"]): (
+                    parameter.get("required", False),
+                    _material_schema(canonical, parameter["schema"]),
+                )
+                for parameter in expected.get("parameters", [])
+            }
+            actual_parameters = {
+                (parameter["name"].lower(), parameter["in"]): (
+                    parameter.get("required", False),
+                    _material_schema(generated, parameter["schema"]),
+                )
+                for parameter in actual.get("parameters", [])
+            }
+            assert actual_parameters == expected_parameters, (path, method)
+            expected_request = _json_schema(expected, "request")
+            actual_request = _json_schema(actual, "request")
+            assert bool(actual_request) == bool(expected_request), (path, method, "request")
+            if expected_request:
+                assert actual["requestBody"].get("required") is expected["requestBody"].get("required")
+                assert _material_schema(generated, actual_request) == _material_schema(canonical, expected_request)
+            assert set(actual["responses"]) == set(expected["responses"]), (path, method, "responses")
+            for status, expected_response in expected["responses"].items():
+                actual_schema = _response_schema(generated, actual["responses"][status])
+                expected_schema = _response_schema(canonical, expected_response)
+                assert bool(actual_schema) == bool(expected_schema), (path, method, status)
+                if expected_schema:
+                    assert _material_schema(generated, actual_schema) == _material_schema(
+                        canonical, expected_schema
+                    ), (path, method, status)
+
+
 @pytest.mark.parametrize(
     ("canonical_component", "generated_component"),
     [
@@ -88,7 +185,7 @@ def test_canonical_openapi_matches_fastapi_paths_methods_and_top_level_shapes():
         ("ChatRequest", "ChatRequest"),
         ("ChatResponse", "ChatResponse"),
         ("MessagesResponse", "MessagesResponse"),
-        ("TelegramLinkResponse", "LinkCodeResponse"),
+        ("TelegramLinkResponse", "TelegramLinkResponse"),
     ],
 )
 def test_critical_component_shapes_match_canonical_openapi(canonical_component: str, generated_component: str):
@@ -113,6 +210,16 @@ def test_validation_and_domain_errors_use_documented_envelope():
         assert missing.json() == {"error": {"code": "NOT_FOUND", "message": "User profile not found"}}
     finally:
         app.dependency_overrides.clear()
+
+
+def test_framework_404_and_405_use_the_same_error_envelope():
+    client = TestClient(app, raise_server_exceptions=False)
+    missing = client.get("/does-not-exist")
+    wrong_method = client.post("/health")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "NOT_FOUND"
+    assert wrong_method.status_code == 405
+    assert wrong_method.json()["error"]["code"] == "METHOD_NOT_ALLOWED"
 
 
 def _create_user(db: FakeFirestore) -> None:
@@ -157,7 +264,7 @@ def test_chat_history_is_service_owned_channel_filtered_and_cursor_stable(monkey
         messages.document(identifier).set(
             {"id": identifier, "role": "user", "channel": channel, "text": identifier, "createdAt": now}
         )
-    service = ChatService(db)
+    service = ChatService(db, transactional_runner=lambda function: function)
     first = service.get_messages("user-1", limit=1, channel="web")
     second = service.get_messages("user-1", limit=1, channel="web", cursor=first.nextCursor)
     assert [message.id for message in first.messages] == ["msg-a"]
@@ -167,8 +274,9 @@ def test_chat_history_is_service_owned_channel_filtered_and_cursor_stable(monkey
 
 def test_chat_route_returns_persisted_ids_and_documented_response_shape():
     class FakeChatService:
-        async def process_message(self, uid: str, text: str, channel: str) -> ChatResponse:
+        async def process_message(self, uid: str, text: str, channel: str, turn_id: str | None = None) -> ChatResponse:
             assert (uid, text, channel) == ("user-1", "Hello", "web")
+            assert turn_id is None
             return ChatResponse(response="Hi", messageId="msg-1", agentMessageId="msg-2")
 
         def get_messages(self, **_: object) -> MessagesResponse:

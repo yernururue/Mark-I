@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from contextlib import asynccontextmanager
 from app.dependencies import close_httpx_client
 
@@ -37,8 +38,7 @@ def _error_response(status_code: int, code: str, message: str) -> JSONResponse:
 async def lifespan(app: FastAPI):
     # Startup
     settings = get_settings()
-    if settings.ENV == "production":
-        settings.validate_for_role(RuntimeRole.API)
+    settings.validate_for_role(RuntimeRole.API)
     await setup_webhook(settings)
     yield
     # Shutdown
@@ -66,14 +66,26 @@ async def domain_error_handler(_: Request, exc: DomainError) -> JSONResponse:
     return _error_response(exc.status_code, exc.code, exc.message)
 
 
-@app.exception_handler(HTTPException)
-async def http_error_handler(_: Request, exc: HTTPException) -> JSONResponse:
+@app.exception_handler(StarletteHTTPException)
+async def http_error_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:
     detail = exc.detail
     if isinstance(detail, dict) and isinstance(detail.get("error"), dict):
         error = detail["error"]
         return _error_response(exc.status_code, error.get("code", "HTTP_ERROR"), error.get("message", "Request failed"))
-    codes = {401: "UNAUTHORIZED", 403: "FORBIDDEN", 404: "NOT_FOUND", 409: "CONFLICT", 422: "VALIDATION_ERROR"}
-    return _error_response(exc.status_code, codes.get(exc.status_code, "HTTP_ERROR"), str(detail))
+    codes = {
+        400: "BAD_REQUEST",
+        401: "UNAUTHORIZED",
+        403: "FORBIDDEN",
+        404: "NOT_FOUND",
+        405: "METHOD_NOT_ALLOWED",
+        409: "CONFLICT",
+        422: "VALIDATION_ERROR",
+        503: "SERVICE_UNAVAILABLE",
+    }
+    response = _error_response(exc.status_code, codes.get(exc.status_code, "HTTP_ERROR"), str(detail))
+    if exc.headers:
+        response.headers.update(exc.headers)
+    return response
 
 
 @app.exception_handler(Exception)
@@ -99,7 +111,7 @@ app.include_router(telegram_webhook_router, prefix="/api/v1")
 
 # 4. Проверка здоровья (Health Check)
 # Это единственный эндпоинт без префикса /api/v1, потому что он технический.
-@app.get("/health", response_model=HealthResponse, tags=["Health"])
+@app.get("/health", response_model=HealthResponse, tags=["Health"], operation_id="healthCheck")
 async def health_check():
     """
     Health Check — это способ проверить, что сервер жив и работает.

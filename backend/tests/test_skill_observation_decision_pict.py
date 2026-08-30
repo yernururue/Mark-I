@@ -46,7 +46,7 @@ def test_decision_policy_pict_matrix(significance, intensity, flags, expected):
     assert saved[0].to_dict()["action"] == ("notified" if expected else "silent")
     assert saved[0].to_dict()["threshold"] == {"chill": 7, "normal": 5, "brutal": 3}[intensity]
     assert saved[0].to_dict()["intensity"] == intensity
-    assert saved[0].to_dict()["deliveryStatus"] == ("pending" if expected else "skipped")
+    assert saved[0].to_dict()["deliveryStatus"] == ("pending" if expected else "suppressed")
     assert "Escalation" in reason if flags else "Significance" in reason
 
 

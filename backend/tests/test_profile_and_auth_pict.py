@@ -10,6 +10,7 @@ from firebase_admin import auth
 from pydantic import ValidationError
 
 from app.api.v1.users import create_profile, get_profile, update_profile
+from app.errors import ConflictError
 from app.middleware.auth import get_current_user
 from app.models.user import CreateProfileRequest, UpdateProfileRequest
 from app.services.user_service import UserService
@@ -122,6 +123,24 @@ def test_create_existing_profile_returns_409():
     assert exc_info.value.detail["error"]["code"] == "CONFLICT"
 
 
+def test_atomic_profile_create_does_not_overwrite_an_existing_document():
+    db = FakeFirestore()
+    service = UserService(db)
+    original = CreateProfileRequest(displayName="Original", goal="Learn Python", intensity="normal")
+    service.create_profile("user-1", "original@example.com", original)
+
+    with pytest.raises(ConflictError):
+        service.create_profile(
+            "user-1",
+            "attacker@example.com",
+            CreateProfileRequest(displayName="Replacement", goal="Replace profile", intensity="brutal"),
+        )
+
+    stored = db.collection("users").document("user-1").get().to_dict()
+    assert stored["email"] == "original@example.com"
+    assert stored["displayName"] == "Original"
+
+
 def test_update_missing_profile_returns_404():
     service = UserService(FakeFirestore())
     with pytest.raises(HTTPException) as exc_info:
@@ -181,6 +200,28 @@ def test_profile_request_validation_rejects_invalid_values(payload):
 def test_profile_goal_is_free_text_but_has_mvp_length_bounds(goal):
     with pytest.raises(ValidationError):
         CreateProfileRequest(displayName="Alex", goal=goal, intensity="normal")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"displayName": "   ", "goal": "Learn testing", "intensity": "normal"},
+        {"displayName": "Alex", "goal": " \n\t ", "intensity": "normal"},
+    ],
+)
+def test_profile_whitespace_only_text_is_rejected(payload):
+    with pytest.raises(ValidationError):
+        CreateProfileRequest.model_validate(payload)
+
+
+def test_profile_text_is_trimmed_before_persistence():
+    db = FakeFirestore()
+    profile = UserService(db).create_profile(
+        "user-1",
+        "alex@example.com",
+        CreateProfileRequest(displayName="  Alex  ", goal="  Learn Python  ", intensity="normal"),
+    )
+    assert (profile.displayName, profile.goal) == ("Alex", "Learn Python")
 
 
 def test_profile_response_does_not_duplicate_skills_endpoint_data():
