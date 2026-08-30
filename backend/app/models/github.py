@@ -1,8 +1,10 @@
 """
 github.py — Форматы данных (схемы) для GitHub интеграции.
 """
-from typing import Optional
-from pydantic import BaseModel, Field
+from datetime import datetime, timezone
+from typing import Any, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class GitHubAuthUrlResponse(BaseModel):
@@ -36,3 +38,46 @@ class SelectReposRequest(BaseModel):
 class SelectReposResponse(BaseModel):
     connectedRepos: list[str] = Field(..., description="Список подключенных репозиториев")
     webhooksRegistered: int = Field(..., description="Количество успешно зарегистрированных вебхуков")
+
+
+class GitHubEventEnvelope(BaseModel):
+    """Canonical versioned Pub/Sub payload shared by publisher and worker."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schemaVersion: Literal[1] = 1
+    deliveryId: str = Field(min_length=1)
+    eventType: str = Field(min_length=1)
+    uid: str = Field(min_length=1)
+    repoFullName: str = Field(min_length=1)
+    payload: dict[str, Any]
+    receivedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @field_validator("deliveryId", "eventType", "uid", "repoFullName")
+    @classmethod
+    def require_non_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("value must not be blank")
+        return value
+
+    @field_validator("receivedAt")
+    @classmethod
+    def require_timezone_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("receivedAt must be timezone-aware")
+        return value
+
+
+class GitHubEventContext(BaseModel):
+    """Meaningful, payload-safe input passed from a webhook extractor to AI."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repo: str = Field(min_length=1)
+    eventType: str = Field(min_length=1)
+    ref: str | None = None
+    title: str | None = None
+    description: str | None = None
+    changesText: str = Field(min_length=1)
+    metadata: dict[str, Any]

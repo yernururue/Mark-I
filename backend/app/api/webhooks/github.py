@@ -7,7 +7,6 @@ from google.cloud.firestore_v1.client import Client as FirestoreClient
 import httpx
 from google.cloud import pubsub_v1, secretmanager
 
-from app.config import settings
 from app.dependencies import get_github_service
 from app.services.github_service import GitHubService
 

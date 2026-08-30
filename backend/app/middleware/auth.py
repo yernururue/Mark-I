@@ -67,8 +67,14 @@ async def get_current_user(request: Request) -> dict:
     # 4. Проверка пройдена!
     # Возвращаем словарь с главной информацией о человеке. 
     # Теперь любой эндпоинт может узнать, кто именно к нему пришел (uid).
+    uid = decoded_token.get("uid")
+    if not isinstance(uid, str) or not uid:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": {"code": "UNAUTHORIZED", "message": "Токен не содержит идентификатор пользователя"}},
+        )
     return {
-        "uid": decoded_token["uid"],
+        "uid": uid,
         "email": decoded_token.get("email", ""),
         "name": decoded_token.get("name", ""),
     }

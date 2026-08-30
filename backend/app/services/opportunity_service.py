@@ -4,15 +4,15 @@ import httpx
 from datetime import datetime, timezone
 from google.cloud.firestore_v1.client import Client as FirestoreClient
 from google.cloud import pubsub_v1
-from app.config import get_settings
+from app.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 class OpportunityService:
-    def __init__(self, db: FirestoreClient):
+    def __init__(self, db: FirestoreClient, settings: Settings | None = None, publisher: pubsub_v1.PublisherClient | None = None):
         self._db = db
-        self.publisher = pubsub_v1.PublisherClient()
+        settings = settings or get_settings()
+        self.publisher = publisher or pubsub_v1.PublisherClient()
         self.topic_path = self.publisher.topic_path(settings.GCP_PROJECT_ID, "opportunity-collect")
 
     async def fetch_and_publish_opportunities(self) -> dict:

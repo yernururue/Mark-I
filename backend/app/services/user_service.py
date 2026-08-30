@@ -16,6 +16,7 @@ from typing import Optional
 
 # Импортируем тип FirestoreClient для подсказок в коде
 from google.cloud.firestore_v1.client import Client as FirestoreClient
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.models.user import CreateProfileRequest, UpdateProfileRequest, UserProfile
 
@@ -123,7 +124,7 @@ class UserService:
         Ищет пользователя по telegramUserId и возвращает его uid.
         """
         # В Firestore можно использовать query
-        users_ref = self._collection.where(filter=("telegramUserId", "==", telegram_user_id)).limit(1).get()
+        users_ref = self._collection.where(filter=FieldFilter("telegramUserId", "==", telegram_user_id)).limit(1).get()
         if not users_ref:
             return None
         return users_ref[0].id

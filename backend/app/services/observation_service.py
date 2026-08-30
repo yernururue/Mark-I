@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from google.cloud.firestore_v1.client import Client as FirestoreClient
 from google.cloud.firestore_v1.query import Query
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.models.observation import Observation
 
@@ -22,13 +23,14 @@ class ObservationService:
         concept: str,
         sentiment: str,
         significance_score: int,
-        metadata: Optional[dict] = None
+        metadata: Optional[dict] = None,
+        observation_id: Optional[str] = None,
     ) -> Observation:
         """
         Creates a new observation in Firestore.
         """
         now = datetime.now(timezone.utc)
-        obs_id = f"obs-{uuid.uuid4().hex[:12]}"
+        obs_id = observation_id or f"obs-{uuid.uuid4().hex[:12]}"
         
         doc_data = {
             "id": obs_id,
@@ -58,7 +60,7 @@ class ObservationService:
         query = self._get_collection(uid)
         
         if concept:
-            query = query.where(filter=("concept", "==", concept))
+            query = query.where(filter=FieldFilter("concept", "==", concept))
             
         query = query.order_by("createdAt", direction=Query.DESCENDING).limit(limit)
         
@@ -72,7 +74,7 @@ class ObservationService:
         For MVP, counting stream is fine or keeping a counter in the skill doc.
         We'll use standard count() aggregation.
         """
-        query = self._get_collection(uid).where(filter=("concept", "==", concept))
+        query = self._get_collection(uid).where(filter=FieldFilter("concept", "==", concept))
         count_query = query.count()
         results = count_query.get()
         return results[0][0].value

@@ -1,6 +1,6 @@
 ## ============================================================
 ## Mark-I Backend Tracker
-## Последнее обновление: 2026-08-22
+## Последнее обновление: 2026-08-29
 ## ============================================================
 
 ## --- ИНФРАСТРУКТУРА (День 0) ---
@@ -178,6 +178,92 @@ plans:
         status: done
         description: "Opportunity Service + Worker, Cloud Scheduler job, RSS sources, Dockerfile оптимизация, Cloud Run deploy, Firestore Security Rules"
         depends_on: decision-telegram
+
+  - name: backend-remediation-stage-1-runtime-foundation
+    path: docs/systems/backend-remediation-stage-1-runtime-foundation/
+    status: shipped
+    created: 2026-08-29
+    started: 2026-08-29
+    shipped: 2026-08-29
+    source: docs/reports/2026-08-28-backend-remediation-roadmap.md
+    approval_required: true
+    tasks:
+      - name: baseline-and-contract-freeze
+        file: 01-baseline-and-contract-freeze.md
+        status: done
+        description: "Зафиксировать Python 3.11/Docker baseline, матрицу дефектов, версии зависимостей и измеримые quality gates до изменений"
+        depends_on: backend-mvp
+
+      - name: configuration-lifecycle
+        file: 02-configuration-lifecycle.md
+        status: done
+        description: "Ввести единый lazy cached Settings API, role-aware startup validation и удалить import-time конфигурацию"
+        depends_on: baseline-and-contract-freeze
+
+      - name: fastapi-dependency-injection
+        file: 03-fastapi-dependency-injection.md
+        status: done
+        description: "Восстановить auth/database/service dependencies, исправить GitHub factory и обеспечить FastAPI dependency overrides"
+        depends_on: configuration-lifecycle
+
+      - name: package-and-runtime-layout
+        file: 04-package-and-runtime-layout.md
+        status: done
+        description: "Унифицировать top-level package layout с Docker и убрать создание GCP clients при импорте workers"
+        depends_on: fastapi-dependency-injection
+
+      - name: supported-ai-adapter
+        file: 05-supported-ai-adapter.md
+        status: done
+        description: "Заменить google.antigravity на поддерживаемый Google ADK adapter со structured output и тестовыми seams"
+        depends_on: package-and-runtime-layout
+
+      - name: firestore-sdk-correctness
+        file: 06-firestore-sdk-correctness.md
+        status: done
+        description: "Исправить FieldFilter, transaction API, входные инварианты skill update и fidelity тестовых doubles"
+        depends_on: supported-ai-adapter
+
+      - name: runtime-container-acceptance
+        file: 07-runtime-container-acceptance.md
+        status: done
+        description: "Доказать import, OpenAPI, health и worker startup в Python 3.11 Docker без реальных GCP credentials"
+        depends_on: firestore-sdk-correctness
+
+  - name: backend-remediation-stage-2-github-pipeline
+    path: docs/plans/2026-08-29-backend-remediation-stage-2-github-pipeline/
+    status: in-progress
+    created: 2026-08-29
+    started: 2026-08-29
+    shipped:
+    source: docs/reports/2026-08-28-backend-remediation-roadmap.md
+    approval_required: true
+    tasks:
+      - name: event-envelope
+        file: 01-event-envelope.md
+        status: done
+        description: "Единая versioned Pydantic GitHubEventEnvelope модель, owner lookup по connectedRepos и fan-out Pub/Sub messages по uid"
+        depends_on: backend-remediation-stage-1-runtime-foundation
+
+      - name: idempotency-and-retries
+        file: 02-idempotency-and-retries.md
+        status: done
+        description: "processed_events/github:{deliveryId}:{uid}, deterministic effects, корректные ack/nack, lease и retry policy"
+        depends_on: event-envelope
+
+      - name: github-event-extractors
+        file: 03-github-event-extractors.md
+        status: done
+        description: "Typed contexts и extractors для push, pull_request, pull_request_review, issues, issue_comment и create"
+        depends_on: event-envelope
+
+      - name: assessment-and-escalation
+        file: 04-assessment-and-escalation.md
+        status: done
+        description: "Разделение proficiency/significance и deterministic supported escalation flags с PICT regression coverage"
+        depends_on:
+          - idempotency-and-retries
+          - github-event-extractors
 
 ## --- ЧТО СДЕЛАНО В ЭТОМ ЧАТЕ ---
 

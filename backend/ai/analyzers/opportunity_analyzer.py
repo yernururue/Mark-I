@@ -1,13 +1,13 @@
 import logging
 import json
 from vertexai.generative_models import GenerativeModel, GenerationConfig
-from app.config import get_settings
+from app.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 class OpportunityAnalyzer:
-    def __init__(self):
+    def __init__(self, settings: Settings | None = None):
+        settings = settings or get_settings()
         self.model = GenerativeModel(settings.GEMINI_MODEL)
 
     def analyze_opportunity(self, opportunity_data: dict, user_goal: str, user_skills: dict) -> dict:

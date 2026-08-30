@@ -6,7 +6,6 @@ from google.cloud.firestore_v1.client import Client as FirestoreClient
 import httpx
 from google.cloud import pubsub_v1, secretmanager
 
-from app.config import settings
 from app.dependencies import get_github_service
 from app.middleware.auth import get_current_user
 from app.models.github import (
@@ -67,7 +66,7 @@ async def get_github_repos(
 async def select_github_repos(
     request: SelectReposRequest,
     current_user: dict = Depends(get_current_user),
-    service: GitHubService = Depends(_get_github_service),
+    service: GitHubService = Depends(get_github_service),
 ):
     """Выбрать репозитории для отслеживания и зарегистрировать вебхуки (POST /api/v1/github/repos)."""
     result = await service.select_repos(
@@ -83,7 +82,7 @@ async def select_github_repos(
 @router.delete("/disconnect")
 async def disconnect_github(
     current_user: dict = Depends(get_current_user),
-    service: GitHubService = Depends(_get_github_service),
+    service: GitHubService = Depends(get_github_service),
 ):
     """Отключить GitHub полностью (DELETE /api/v1/github/disconnect)."""
     await service.disconnect(current_user["uid"])

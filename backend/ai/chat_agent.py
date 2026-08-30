@@ -2,16 +2,16 @@ import logging
 from typing import List, Dict, Any
 from vertexai.generative_models import GenerativeModel, Content, Part, HarmCategory, HarmBlockThreshold, SafetySetting
 from google.cloud.firestore_v1.client import Client as FirestoreClient
-from app.config import get_settings
+from app.config import Settings, get_settings
 from tenacity import retry, stop_after_attempt, wait_exponential
 from ai.tools.profile import profile_tool
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 class ChatAgent:
-    def __init__(self, db: FirestoreClient, uid: str, system_instruction: str):
+    def __init__(self, db: FirestoreClient, uid: str, system_instruction: str, settings: Settings | None = None):
         self._db = db
+        settings = settings or get_settings()
         self.uid = uid
         self.system_instruction = system_instruction
         
