@@ -3,17 +3,29 @@ from typing import List, Dict, Any
 from vertexai.generative_models import GenerativeModel, Content, Part, HarmCategory, HarmBlockThreshold, SafetySetting
 from google.cloud.firestore_v1.client import Client as FirestoreClient
 from app.config import Settings, get_settings
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 from ai.tools.profile import profile_tool
 
 logger = logging.getLogger(__name__)
 
+
+class ChatToolLoopLimitError(RuntimeError):
+    """The model exceeded the bounded tool-call budget for one durable turn."""
+
 class ChatAgent:
-    def __init__(self, db: FirestoreClient, uid: str, system_instruction: str, settings: Settings | None = None):
+    def __init__(
+        self,
+        db: FirestoreClient,
+        uid: str,
+        system_instruction: str,
+        settings: Settings | None = None,
+        max_tool_iterations: int = 8,
+    ):
         self._db = db
         settings = settings or get_settings()
         self.uid = uid
         self.system_instruction = system_instruction
+        self.max_tool_iterations = max_tool_iterations
         
         # Security settings to prevent jailbreaks / harmful generation
         safety_settings = [
@@ -60,7 +72,11 @@ class ChatAgent:
             })
         return {"observations": obs}
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(
+        retry=retry_if_not_exception_type(ChatToolLoopLimitError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
     async def generate_response(self, history_data: List[Dict[str, Any]], new_message: str) -> str:
         """
         history_data: List of dicts with 'role' ('user' or 'agent') and 'text'.
@@ -79,7 +95,11 @@ class ChatAgent:
             response = await chat.send_message_async(new_message)
             
             # Handle Function Calling loop
+            tool_iterations = 0
             while response.function_call:
+                tool_iterations += 1
+                if tool_iterations > self.max_tool_iterations:
+                    raise ChatToolLoopLimitError(f"tool call limit {self.max_tool_iterations} exceeded")
                 func_call = response.function_call
                 func_name = func_call.name
                 
@@ -104,6 +124,9 @@ class ChatAgent:
                 
             return response.text
             
+        except ChatToolLoopLimitError:
+            logger.warning("ChatAgent tool loop reached its configured bound")
+            raise
         except Exception as e:
             logger.error(f"Error during ChatAgent generate_response: {e}")
             return "I'm having trouble processing that right now. Please try again later."

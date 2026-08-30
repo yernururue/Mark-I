@@ -269,23 +269,11 @@ def test_webhook_hmac_signature_validation(valid):
     assert service.verify_webhook_signature(body, header) is valid
 
 
-def test_webhook_rejects_malformed_json_after_valid_signature():
-    class Service:
-        def verify_webhook_signature(self, body, signature):
-            return True
+def test_webhook_body_schema_is_a_required_json_object():
+    from app.main import app
 
-    with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(
-            receive_github_webhook(
-                request=DummyRequest(b"not-json"),
-                x_hub_signature_256="sha256=valid",
-                x_github_event="push",
-                x_github_delivery="delivery-1",
-                service=Service(),
-            )
-        )
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail["error"]["code"] == "BAD_REQUEST"
+    schema = app.openapi()["paths"]["/api/v1/webhooks/github"]["post"]["requestBody"]
+    assert schema["required"] is True
 
 
 def test_webhook_publishes_valid_payload_and_delivery_id():
@@ -300,7 +288,8 @@ def test_webhook_publishes_valid_payload_and_delivery_id():
 
     response = asyncio.run(
         receive_github_webhook(
-            request=DummyRequest(b'{"repository":{"full_name":"alex/repo"}}'),
+                request=DummyRequest(b'{"repository":{"full_name":"alex/repo"}}'),
+                payload={"repository": {"full_name": "alex/repo"}},
             x_hub_signature_256="sha256=valid",
             x_github_event="push",
             x_github_delivery="delivery-1",
@@ -308,7 +297,7 @@ def test_webhook_publishes_valid_payload_and_delivery_id():
         )
     )
 
-    assert response == {"accepted": True, "deliveryId": "delivery-1"}
+    assert response.model_dump() == {"accepted": True, "deliveryId": "delivery-1"}
     assert calls == [
         {
             "event_type": "push",
@@ -321,25 +310,31 @@ def test_webhook_publishes_valid_payload_and_delivery_id():
 def test_event_envelope_round_trips_without_key_translation():
     envelope = GitHubEventEnvelope(
         deliveryId="delivery-1",
+        activityId="github:activity-1",
         eventType="push",
         uid="user-1",
         repoFullName="Alex/Repo",
+        actorLogin="alex",
+        actorId=42,
         payload={"repository": {"full_name": "Alex/Repo"}},
     )
 
     parsed = GitHubEventEnvelope.model_validate_json(envelope.model_dump_json())
 
     assert parsed == envelope
-    assert parsed.schemaVersion == 1
+    assert parsed.schemaVersion == 2
     assert parsed.receivedAt.tzinfo is not None
 
 
 def test_worker_decodes_the_publisher_envelope_without_manual_field_mapping():
     envelope = GitHubEventEnvelope(
         deliveryId="delivery-1",
+        activityId="github:activity-1",
         eventType="push",
         uid="user-1",
         repoFullName="alex/repo",
+        actorLogin="alex",
+        actorId=42,
         payload={"repository": {"full_name": "alex/repo"}},
     )
 
@@ -352,16 +347,19 @@ def test_worker_decodes_the_publisher_envelope_without_manual_field_mapping():
     "changes",
     [
         {"uid": ""},
-        {"schemaVersion": 2},
+        {"schemaVersion": 3},
         {"receivedAt": "2026-08-29T12:00:00"},
     ],
 )
 def test_event_envelope_rejects_invalid_or_unsupported_contract(changes):
     data = {
         "deliveryId": "delivery-1",
+        "activityId": "github:activity-1",
         "eventType": "push",
         "uid": "user-1",
         "repoFullName": "alex/repo",
+        "actorLogin": "alex",
+        "actorId": 42,
         "payload": {},
         "receivedAt": "2026-08-29T12:00:00+00:00",
     }
@@ -373,15 +371,26 @@ def test_event_envelope_rejects_invalid_or_unsupported_contract(changes):
 
 def test_publish_event_fans_out_one_validated_envelope_per_connected_user():
     db = FakeFirestore()
-    db.collection("users").document("user-z").set({"connectedRepos": ["other/repo", "Alex/Repo"]})
-    db.collection("users").document("user-a").set({"connectedRepos": ["alex/repo"]})
-    db.collection("users").document("user-other").set({"connectedRepos": ["elsewhere/repo"]})
+    db.collection("users").document("user-z").set(
+        {"connectedRepos": ["other/repo", "Alex/Repo"], "githubUsername": "alex"}
+    )
+    db.collection("users").document("user-a").set(
+        {"connectedRepos": ["alex/repo"], "githubUsername": "alex"}
+    )
+    db.collection("users").document("user-other").set(
+        {"connectedRepos": ["elsewhere/repo"], "githubUsername": "other"}
+    )
     service = make_service(db=db)
 
     uids = service.publish_event(
         event_type="push",
         delivery_id="delivery-1",
-        payload={"repository": {"full_name": "alex/repo"}, "commits": []},
+        payload={
+            "repository": {"full_name": "alex/repo"},
+            "sender": {"login": "alex", "id": 42},
+            "after": "abc123",
+            "commits": [],
+        },
     )
 
     assert uids == ["user-a", "user-z"]
@@ -389,12 +398,22 @@ def test_publish_event_fans_out_one_validated_envelope_per_connected_user():
     assert [message.uid for message in messages] == ["user-a", "user-z"]
     assert all(message.deliveryId == "delivery-1" for message in messages)
     assert all(message.eventType == "push" for message in messages)
+    assert all(message.actorLogin == "alex" for message in messages)
+    assert len({message.activityId for message in messages}) == 1
 
 
 def test_publish_event_accepts_unconnected_repository_without_publishing(caplog):
     service = make_service(db=FakeFirestore())
 
-    assert service.publish_event("push", "delivery-1", {"repository": {"full_name": "alex/repo"}}) == []
+    assert service.publish_event(
+        "push",
+        "delivery-1",
+        {
+            "repository": {"full_name": "alex/repo"},
+            "sender": {"login": "alex", "id": 42},
+            "after": "abc123",
+        },
+    ) == []
     assert service._pubsub_publisher.published == []
     assert "unconnected repository" in caplog.text
 
@@ -404,3 +423,134 @@ def test_publish_event_rejects_missing_repository_name():
         make_service().publish_event("push", "delivery-1", {"repository": {}})
 
     assert exc_info.value.status_code == 400
+
+
+def test_shared_repository_event_is_attributed_only_to_matching_github_actor():
+    db = FakeFirestore()
+    db.collection("users").document("alex-uid").set(
+        {"connectedRepos": ["org/shared"], "githubUsername": "Alex", "githubUserId": 42}
+    )
+    db.collection("users").document("dana-uid").set(
+        {"connectedRepos": ["org/shared"], "githubUsername": "dana", "githubUserId": 99}
+    )
+    service = make_service(db=db)
+
+    uids = service.publish_event(
+        "pull_request_review",
+        "delivery-1",
+        {
+            "action": "submitted",
+            "repository": {"full_name": "org/shared"},
+            "sender": {"login": "dana", "id": 99},
+            "review": {"id": 1001, "submitted_at": "2026-08-29T10:00:00Z"},
+        },
+    )
+
+    assert uids == ["dana-uid"]
+    envelope = GitHubEventEnvelope.model_validate_json(service._pubsub_publisher.published[0][1]["data"])
+    assert envelope.actorLogin == "dana"
+    assert envelope.actorId == 99
+    assert envelope.eventAction == "submitted"
+
+
+def test_duplicate_physical_deliveries_share_a_logical_activity_id():
+    db = FakeFirestore()
+    db.collection("users").document("user-1").set(
+        {"connectedRepos": ["alex/repo"], "githubUsername": "alex", "githubUserId": 42}
+    )
+    service = make_service(db=db)
+    payload = {
+        "repository": {"full_name": "alex/repo"},
+        "sender": {"login": "alex", "id": 42},
+        "after": "commit-sha",
+        "before": "parent-sha",
+        "ref": "refs/heads/main",
+    }
+
+    service.publish_event("push", "physical-delivery-1", payload)
+    service.publish_event("push", "physical-delivery-2", payload)
+
+    envelopes = [
+        GitHubEventEnvelope.model_validate_json(item[1]["data"])
+        for item in service._pubsub_publisher.published
+    ]
+    assert [item.deliveryId for item in envelopes] == ["physical-delivery-1", "physical-delivery-2"]
+    assert len({item.activityId for item in envelopes}) == 1
+
+
+@pytest.mark.parametrize(
+    ("event_type", "payload"),
+    [
+        ("fork", {}),
+        ("pull_request", {"action": "labeled"}),
+        ("issues", {"action": "assigned"}),
+    ],
+)
+def test_unsupported_event_or_action_is_acknowledged_without_publish(event_type, payload):
+    service = make_service()
+    full_payload = {
+        **payload,
+        "repository": {"full_name": "alex/repo"},
+        "sender": {"login": "alex", "id": 42},
+    }
+
+    assert service.publish_event(event_type, "delivery-1", full_payload) == []
+    assert service._pubsub_publisher.published == []
+
+
+def test_repository_hook_is_shared_and_removed_only_after_last_subscriber(monkeypatch):
+    db = FakeFirestore()
+    for uid in ("user-1", "user-2"):
+        db.collection("users").document(uid).set({"connectedRepos": [], "webhookIds": {}})
+    http = DummyHTTP(
+        gets=[DummyResponse(200, [])],
+        posts=[DummyResponse(201, {"id": 77})],
+        deletes=[DummyResponse(204)],
+    )
+    service = make_service(db=db, http=http, webhook_base_url="https://backend.example")
+    monkeypatch.setattr(service, "_get_token", lambda uid: f"token-{uid}")
+
+    asyncio.run(service.select_repos("user-1", ["org/shared"]))
+    asyncio.run(service.select_repos("user-2", ["org/shared"]))
+
+    hook_posts = [call for call in http.calls if call[0] == "POST" and call[1].endswith("/hooks")]
+    assert len(hook_posts) == 1
+    registry = service._repository_hook_ref("org/shared").get().to_dict()
+    assert registry["hookId"] == "77"
+    assert registry["subscriberUids"] == ["user-1", "user-2"]
+
+    asyncio.run(service.select_repos("user-1", []))
+    assert not [call for call in http.calls if call[0] == "DELETE"]
+    assert service._repository_hook_ref("org/shared").get().to_dict()["subscriberUids"] == ["user-2"]
+
+    asyncio.run(service.select_repos("user-2", []))
+    assert len([call for call in http.calls if call[0] == "DELETE"]) == 1
+    assert service._repository_hook_ref("org/shared").get().exists is False
+
+
+def test_legacy_duplicate_hooks_are_reconciled_without_creating_another(monkeypatch):
+    db = FakeFirestore()
+    db.collection("users").document("user-1").set({"connectedRepos": [], "webhookIds": {}})
+    http = DummyHTTP(
+        gets=[
+            DummyResponse(
+                200,
+                [
+                    {"id": 10, "config": {"url": "https://backend.example/api/v1/webhooks/github"}},
+                    {"id": 11, "config": {"url": "https://backend.example/api/v1/webhooks/github"}},
+                    {"id": 12, "config": {"url": "https://other.example/hook"}},
+                ],
+            )
+        ],
+        deletes=[DummyResponse(204)],
+    )
+    service = make_service(db=db, http=http, webhook_base_url="https://backend.example")
+    monkeypatch.setattr(service, "_get_token", lambda uid: "token")
+
+    result = asyncio.run(service.select_repos("user-1", ["org/shared"]))
+
+    assert result["webhooksRegistered"] == 0
+    assert not [call for call in http.calls if call[0] == "POST"]
+    deletes = [call for call in http.calls if call[0] == "DELETE"]
+    assert len(deletes) == 1 and deletes[0][1].endswith("/hooks/11")
+    assert service._repository_hook_ref("org/shared").get().to_dict()["hookId"] == "10"

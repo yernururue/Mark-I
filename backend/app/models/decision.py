@@ -1,14 +1,16 @@
 from datetime import datetime
-from typing import List, Optional
-from pydantic import BaseModel, ConfigDict
+from typing import List, Literal
+from pydantic import BaseModel, ConfigDict, Field
 
 class Decision(BaseModel):
     id: str
     observationId: str
-    significanceScore: int
-    intensityThreshold: int
+    action: Literal["notified", "silent"]
+    significanceScore: int = Field(ge=1, le=10)
+    threshold: int = Field(ge=1, le=10)
+    intensity: Literal["chill", "normal", "brutal"]
     escalationFlags: List[str]
-    shouldNotify: bool
+    deliveryStatus: Literal["pending", "sending", "sent", "suppressed", "failed", "unknown"]
     reason: str
     createdAt: datetime
 

@@ -4,11 +4,11 @@ github.py — Форматы данных (схемы) для GitHub интег�
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field, field_validator
 
 
 class GitHubAuthUrlResponse(BaseModel):
-    authUrl: str = Field(..., description="OAuth authorization URL для редиректа")
+    authUrl: AnyUrl = Field(..., description="OAuth authorization URL для редиректа")
 
 
 class GitHubCallbackRequest(BaseModel):
@@ -19,7 +19,7 @@ class GitHubCallbackRequest(BaseModel):
 class GitHubRepo(BaseModel):
     fullName: str = Field(..., description="Полное название репозитория (owner/repo)")
     private: bool = Field(..., description="Приватный ли репозиторий")
-    connected: Optional[bool] = Field(None, description="Подключен ли репозиторий в Mark-I")
+    connected: bool = Field(None, description="Подключен ли репозиторий в Mark-I")
 
 
 class GitHubCallbackResponse(BaseModel):
@@ -40,26 +40,42 @@ class SelectReposResponse(BaseModel):
     webhooksRegistered: int = Field(..., description="Количество успешно зарегистрированных вебхуков")
 
 
+class DisconnectResponse(BaseModel):
+    disconnected: bool
+
+
 class GitHubEventEnvelope(BaseModel):
     """Canonical versioned Pub/Sub payload shared by publisher and worker."""
 
     model_config = ConfigDict(extra="forbid")
 
-    schemaVersion: Literal[1] = 1
+    schemaVersion: Literal[2] = 2
     deliveryId: str = Field(min_length=1)
+    activityId: str = Field(min_length=1)
     eventType: str = Field(min_length=1)
+    eventAction: str | None = None
     uid: str = Field(min_length=1)
     repoFullName: str = Field(min_length=1)
+    actorLogin: str = Field(min_length=1)
+    actorId: int | None = Field(default=None, ge=1)
     payload: dict[str, Any]
     receivedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    @field_validator("deliveryId", "eventType", "uid", "repoFullName")
+    @field_validator("deliveryId", "activityId", "eventType", "uid", "repoFullName", "actorLogin")
     @classmethod
     def require_non_blank(cls, value: str) -> str:
         value = value.strip()
         if not value:
             raise ValueError("value must not be blank")
         return value
+
+    @field_validator("eventAction")
+    @classmethod
+    def strip_optional_action(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
 
     @field_validator("receivedAt")
     @classmethod

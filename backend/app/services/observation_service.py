@@ -6,7 +6,8 @@ from google.cloud.firestore_v1.client import Client as FirestoreClient
 from google.cloud.firestore_v1.query import Query
 from google.cloud.firestore_v1.base_query import FieldFilter
 
-from app.models.observation import Observation
+from app.models.observation import Observation, ObservationsResponse
+from app.services.cursor import decode_cursor, encode_cursor
 
 class ObservationService:
     def __init__(self, db: FirestoreClient):
@@ -52,7 +53,8 @@ class ObservationService:
         self, 
         uid: str, 
         limit: int = 10,
-        concept: Optional[str] = None
+        concept: Optional[str] = None,
+        source: Optional[str] = None,
     ) -> List[Observation]:
         """
         Reads recent observations, optionally filtered by concept.
@@ -61,11 +63,44 @@ class ObservationService:
         
         if concept:
             query = query.where(filter=FieldFilter("concept", "==", concept))
+        if source:
+            query = query.where(filter=FieldFilter("source", "==", source))
             
         query = query.order_by("createdAt", direction=Query.DESCENDING).limit(limit)
         
         docs = query.stream()
         return [self._firestore_to_observation(doc.to_dict()) for doc in docs]
+
+    def get_observations(
+        self,
+        uid: str,
+        limit: int,
+        cursor: str | None = None,
+        source: str | None = None,
+        concept: str | None = None,
+    ) -> ObservationsResponse:
+        """Return a stable newest-first page with no duplicate boundary item."""
+        query = self._get_collection(uid)
+        if source:
+            query = query.where(filter=FieldFilter("source", "==", source))
+        if concept:
+            query = query.where(filter=FieldFilter("concept", "==", concept))
+        query = query.order_by("createdAt", direction=Query.DESCENDING).order_by("__name__", direction=Query.DESCENDING)
+        if cursor:
+            created_at, document_id = decode_cursor(cursor)
+            query = query.start_after({"createdAt": created_at, "__name__": document_id})
+        docs = list(query.limit(limit + 1).stream())
+        has_more = len(docs) > limit
+        page_docs = docs[:limit]
+        observations = [self._firestore_to_observation(doc.to_dict()) for doc in page_docs]
+        next_cursor = None
+        if has_more and observations:
+            next_cursor = encode_cursor(observations[-1].createdAt, observations[-1].id)
+        return ObservationsResponse(
+            observations=observations,
+            nextCursor=next_cursor,
+            hasMore=has_more,
+        )
 
     def get_observation_count(self, uid: str, concept: str) -> int:
         """

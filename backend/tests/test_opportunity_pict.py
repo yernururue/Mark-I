@@ -57,7 +57,7 @@ def build_service(monkeypatch, db, response):
     return opportunity_module.OpportunityService(db), publisher
 
 
-def test_new_articles_are_published_and_marked_processed(monkeypatch):
+def test_current_articles_are_published_and_recorded_as_collected(monkeypatch):
     db = FakeFirestore()
     articles = [
         {
@@ -74,19 +74,21 @@ def test_new_articles_are_published_and_marked_processed(monkeypatch):
 
     assert result == {"status": "success", "fetched": 1, "published": 1}
     assert publisher.messages[0][1]["eventId"] == "devto-101"
-    assert db.collection("processed_events").document("devto-101").get().exists
+    collected = db.collection("collected_opportunities").document("devto-101").get()
+    assert collected.exists
+    assert collected.to_dict()["source"] == "devto"
 
 
-def test_already_processed_articles_are_skipped(monkeypatch):
+def test_seen_current_articles_are_republished_for_newly_eligible_users(monkeypatch):
     db = FakeFirestore()
-    db.collection("processed_events").document("devto-101").set({"eventId": "devto-101"})
+    db.collection("collected_opportunities").document("devto-101").set({"eventId": "devto-101"})
     articles = [{"id": 101, "url": "https://dev.to/article-101", "title": "Learn React"}]
     service, publisher = build_service(monkeypatch, db, FakeResponse(articles))
 
     result = asyncio.run(service.fetch_and_publish_opportunities())
 
-    assert result == {"status": "success", "fetched": 1, "published": 0}
-    assert publisher.messages == []
+    assert result == {"status": "success", "fetched": 1, "published": 1}
+    assert publisher.messages[0][1]["eventId"] == "devto-101"
 
 
 def test_devto_timeout_or_error_returns_error_status(monkeypatch):

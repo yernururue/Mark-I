@@ -1,312 +1,79 @@
-# Mark-I — Event Architecture
+# Mark-I — Event and delivery semantics
 
-> **Status:** Draft v1.1  
+> **Status:** Current backend contract
 > **Last updated:** 2026-08-29
 
----
+This document describes at-least-once transport and exactly-once business effects. It does not promise exactly-once external Telegram delivery, which Telegram's API cannot provide.
 
-## Overview
+## GitHub activity
 
-Mark-I uses an event-driven architecture for asynchronous processing. Webhook events and scheduled tasks are decoupled from processing via Cloud Pub/Sub. This ensures:
+1. `POST /api/v1/webhooks/github` verifies `X-Hub-Signature-256`, accepts only supported `X-GitHub-Event` values, and looks up repository subscribers.
+2. A repository has one shared remote webhook. The ingress fan-outs one versioned Pub/Sub envelope per eligible owner; the owner must match the GitHub actor (`githubUserId` when available, otherwise login).
+3. The published `GitHubEventEnvelope` is `schemaVersion: 2`:
 
-1. **Fast webhook responses** — Acknowledge webhooks immediately, process async
-2. **Retry safety** — Pub/Sub retries failed messages
-3. **Idempotency** — Deduplication via `processed_events` collection
-4. **Scalability** — Workers can scale independently
-5. **Concurrent agents** — Each assignment is dispatched as an isolated run carrying `uid`, `agentId`, and `runId`
-
----
-
-## Event Flows
-
-### 1. GitHub Activity Flow
-
-```
-GitHub (push/PR/review/issue/comment/create)
-    │
-    ▼
-POST /api/v1/webhooks/github
-    │
-    ├─ 1. Validate HMAC signature (X-Hub-Signature-256)
-    ├─ 2. Parse event type (X-GitHub-Event)
-    ├─ 3. Identify user by repo → connectedRepos lookup
-    ├─ 4. Check deduplication (processed_events/{deliveryId})
-    ├─ 5. Publish to Pub/Sub topic: github-events
-    └─ 6. Return 200 OK immediately
-    
-    ▼ (async via Pub/Sub)
-    
-GitHub Worker (Cloud Run / push subscription)
-    │
-    ├─ 7.  Receive Pub/Sub message
-    ├─ 8.  Double-check deduplication
-    ├─ 9.  Resolve subscribed mentor agent and create run record
-    ├─ 10. Load agent configuration and authorized context
-    ├─ 11. Fetch diff/PR content from GitHub API (if needed)
-    ├─ 12. Send to the configured agent runtime for analysis
-    │       → Structured output: concept, proficiency, sentiment, significance
-    ├─ 13. Create observation with agentId + runId
-    ├─ 14. Update skill scores (weighted average)
-    ├─ 15. Run Decision Policy
-    │       → Evaluate significance vs threshold
-    │       → Check escalation rules
-    │       → Record decision
-    ├─ 16. If decision = notify:
-    │       → Send Telegram message
-    ├─ 17. Complete run and write to processed_events/{deliveryId}
-    └─ 18. ACK Pub/Sub message
-```
-
-#### GitHub Event Details
-
-| GitHub Event | What We Extract | Analysis Focus |
-|-------------|----------------|----------------|
-| `push` | Commit messages, file diffs | Concepts in code, quality patterns |
-| `pull_request` (opened/merged) | PR title, description, diff | Architecture decisions, code organization |
-| `pull_request_review` | Review comments | Code review skills, feedback quality |
-| `issues` (opened/closed) | Issue title, body | Problem decomposition, project management |
-| `issue_comment` | Comment text | Communication, problem-solving |
-| `create` (branch/tag) | Branch/tag name | Project structure, workflow |
-
----
-
-### 2. Opportunity Discovery Flow
-
-```
-Cloud Scheduler (cron: every hour for demo)
-    │
-    ▼
-Pub/Sub topic: opportunity-collect
-    │
-    ▼ (push subscription)
-    
-Opportunity Worker (Cloud Run)
-    │
-    ├─ 1. Receive trigger message
-    ├─ 2. Fetch content from configured sources
-    │       → RSS feeds, APIs, scraping
-    ├─ 3. For each user with a configured goal:
-    │       ├─ 4. Resolve authorized opportunity-discovery agent(s)
-    │       ├─ 5. Create run and load permitted agent/workspace context
-    │       ├─ 6. Send items to the configured agent runtime
-    │       │       → Relevance score (0-10) per item per user
-    │       ├─ 7. For items with relevance >= 6:
-    │       │       ├─ Create observation with agentId + runId
-    │       │       ├─ Run Decision Policy
-    │       │       └─ If decision = notify: Send Telegram message
-    │       └─ 8. Complete run and continue to next user
-    └─ 9. ACK Pub/Sub message
-```
-
-#### Opportunity Sources
-
-> **NOTE:** Sources are TBD. User will provide the final list. Placeholder sources for development:
-
-| Source | Type | Content |
-|--------|------|---------|
-| TBD-1 | RSS/API | TBD |
-| TBD-2 | RSS/API | TBD |
-| TBD-3 | RSS/API | TBD |
-
----
-
-### 3. Telegram Message Flow
-
-```
-Telegram User sends message
-    │
-    ▼
-POST /api/v1/webhooks/telegram
-    │
-    ├─ 1. Validate secret token
-    ├─ 2. Parse update type (message / command)
-    │
-    ├─ If COMMAND (/start):
-    │       ├─ 3a. Send welcome message
-    │       └─ 4a. Return 200
-    │
-    ├─ If COMMAND (/link <code>):
-    │       ├─ 3b. Look up link code in Firestore
-    │       ├─ 4b. Validate code (exists, not expired)
-    │       ├─ 5b. Link telegramUserId ↔ uid
-    │       ├─ 6b. Clear link code
-    │       ├─ 7b. Send confirmation message
-    │       └─ 8b. Return 200
-    │
-    └─ If REGULAR MESSAGE:
-            ├─ 3c. Identify user by telegramUserId
-            ├─ 4c. If user not linked → send "Please link your account" message
-            ├─ 5c. Resolve addressed/default agent
-            ├─ 6c. Load agent config and authorized context
-            ├─ 7c. Store message with agentId + runId
-            ├─ 8c. Send to configured agent runtime
-            ├─ 9c. Store identified agent response
-            ├─ 10c. Send response via Telegram Bot API
-            └─ 11c. Return 200
-```
-
----
-
-### 4. Web Chat Flow
-
-```
-Frontend sends POST /api/v1/chat
-    │
-    ├─ 1. Verify Firebase ID token
-    ├─ 2. Validate addressed agentId(s)
-    ├─ 3. Create run and load authorized agent/workspace context
-    ├─ 4. Store user message with agentId + runId
-    ├─ 5. Send to configured agent runtime
-    ├─ 6. Receive identified agent response
-    ├─ 7. Store agent response with agentId + runId
-    └─ 8. Return response to frontend
-    
-Frontend picks up new messages via Firestore onSnapshot listener
-```
-
----
-
-## Event Definitions
-
-### Event: `github_activity`
-
-| Property | Value |
-|----------|-------|
-| **Event Name** | `github_activity` |
-| **Producer** | GitHub (via webhook) → Backend webhook handler |
-| **Consumer** | GitHub Worker (via Pub/Sub) |
-| **Pub/Sub Topic** | `github-events` |
-| **Payload** | See below |
-| **Idempotency** | Deduplicated by `deliveryId` in `processed_events` collection |
-| **Retry Strategy** | Pub/Sub automatic retry with exponential backoff (max 3 retries) |
-| **Failure Behavior** | Message moves to dead letter topic after max retries. Alert in Cloud Logging. |
-
-**Pub/Sub Message Payload:**
 ```json
 {
-  "deliveryId": "github-delivery-uuid",
-  "eventType": "push",
-  "userId": "firebase-uid-123",
-  "repo": "alexdev/algorithms",
-  "payload": { /* raw GitHub webhook payload */ },
-  "receivedAt": "2026-08-19T12:00:00Z"
+  "schemaVersion": 2,
+  "deliveryId": "github-physical-delivery-id",
+  "activityId": "github:stable-logical-activity-id",
+  "eventType": "pull_request",
+  "eventAction": "opened",
+  "uid": "firebase-uid",
+  "repoFullName": "owner/repo",
+  "actorLogin": "octocat",
+  "actorId": 1,
+  "payload": {},
+  "receivedAt": "2026-08-29T12:00:00Z"
 }
 ```
 
----
+`deliveryId` identifies a physical GitHub/Pub/Sub delivery for audit. `activityId` identifies the stable business activity. A redelivery with a different `deliveryId` but the same `activityId` records both IDs and does not create another observation, skill mutation, decision, or outbox message.
 
-### Event: `opportunity_trigger`
+4. The worker claims `processed_events/{github:activityId:uid}` with a lease. It collects bounded/redacted code evidence where available, persists strict AI output in `prepared`, then atomically applies the observation, skill signal, decision and delivery outbox record.
+5. The decision policy uses **significance** for notification threshold and **proficiencyAssessment** only when code evidence supports a skill update. Supported escalation flags are deterministic: `new_concept`, `skill_regression`, `milestone_reached`, `repeated_error`.
+6. Definite retryable work releases the event claim and nacks Pub/Sub. Invalid envelopes and invalid model output are terminal/acknowledged. The immutable prepared analysis is reused on retry.
 
-| Property | Value |
-|----------|-------|
-| **Event Name** | `opportunity_trigger` |
-| **Producer** | Cloud Scheduler |
-| **Consumer** | Opportunity Worker (via Pub/Sub) |
-| **Pub/Sub Topic** | `opportunity-collect` |
-| **Payload** | See below |
-| **Idempotency** | Opportunities are deduplicated by source URL per user |
-| **Retry Strategy** | Pub/Sub automatic retry (max 2 retries) |
-| **Failure Behavior** | Log error, skip to next schedule. Non-critical. |
+## Telegram delivery outbox
 
-**Pub/Sub Message Payload:**
-```json
-{
-  "triggerId": "scheduler-trigger-uuid",
-  "triggeredAt": "2026-08-19T12:00:00Z"
-}
-```
+For a decision requiring a notification, an outbox row is claimed as `sending` before the HTTP request. The outbound destination is `telegramChatId`, never `telegramUserId`.
 
----
+| Telegram outcome | Durable state | Worker result |
+|---|---|---|
+| `200` / `ok=true` | `sent` | ACK |
+| 429 or 5xx | `failed` | retry event; no business effects repeat |
+| definite 4xx / bot not configured | `failed` | ACK; delivery cannot succeed automatically |
+| transport failure after request may have left process | `unknown` | ACK; no automatic resend |
+| expired `sending` lease | `unknown` | ACK; no automatic resend |
 
-### Event: `telegram_update`
+`unknown` deliberately prefers a possible missed message to a possible duplicate notification. A future operator reconciliation flow must make any resend explicit.
 
-| Property | Value |
-|----------|-------|
-| **Event Name** | `telegram_update` |
-| **Producer** | Telegram Bot API (via webhook) |
-| **Consumer** | Backend webhook handler (synchronous) |
-| **Pub/Sub Topic** | N/A (processed synchronously) |
-| **Payload** | Telegram Update object |
-| **Idempotency** | Telegram provides `update_id` — can deduplicate if needed |
-| **Retry Strategy** | Telegram retries if we don't respond 200 within ~60s |
-| **Failure Behavior** | Return 200 to prevent Telegram from retrying. Log error. |
+## Telegram inbound webhook
 
-**Design Decision:** Telegram updates are processed synchronously (not via Pub/Sub) because:
-1. Telegram expects a fast response (or it retries)
-2. Chat responses need low latency for good UX
-3. Volume is low (single-user hackathon demo)
+`POST /api/v1/webhooks/telegram` requires a configured `X-Telegram-Bot-Api-Secret-Token` and compares it in constant time. If no secret is configured the endpoint fails closed with 503.
 
----
+The webhook transactionally claims `telegram_updates/{update_id}` before handler side effects:
 
-## Pub/Sub Configuration
+- completed update → 200 without running the handler again;
+- active lease → 503 so Telegram retries rather than losing work;
+- handler error → state becomes `retryable`, then the request fails for Telegram retry;
+- handler success → state becomes `completed`.
 
-### Topics
+Telegram identity is always `message.from.id`; `message.chat.id` is only a destination. Linking and AI chat are accepted only in a private chat. Group and supergroup messages receive a generic privacy response and never expose a linked profile.
 
-| Topic Name | Purpose |
-|-----------|---------|
-| `github-events` | Receives GitHub webhook events for async processing |
-| `opportunity-collect` | Receives scheduler triggers for opportunity collection |
-| `github-events-dlq` | Dead letter topic for failed GitHub event processing |
+## Chat turns, history and cursors
 
-### Subscriptions
+Web and private Telegram chat write the same `users/{uid}/messages` history. A web caller may supply `turnId`; Telegram uses `telegram:{update_id}`. Firestore claims that turn and a per-user active-turn lease before model invocation. A duplicate completed turn returns its stored IDs and response; an active/failed/unknown turn never starts a second model call. The agent also has a bounded tool-call loop.
 
-| Subscription | Topic | Type | Endpoint |
-|-------------|-------|------|----------|
-| `github-events-sub` | `github-events` | Push | `https://<backend>/internal/workers/github` |
-| `opportunity-collect-sub` | `opportunity-collect` | Push | `https://<backend>/internal/workers/opportunity` |
-| `github-events-dlq-sub` | `github-events-dlq` | Pull | Manual inspection |
+Pages are chronological `(createdAt ASC, documentId ASC)`; observation pages are newest-first `(createdAt DESC, documentId DESC)`. Cursors encode both values and therefore do not duplicate equal-timestamp boundaries. New records before a cursor are intentionally outside that cursor's logical snapshot.
 
-### Push Subscription Config
+## Opportunity flow
 
-```yaml
-ackDeadlineSeconds: 300        # 5 min for AI processing
-messageRetentionDuration: 604800s  # 7 days
-retryPolicy:
-  minimumBackoff: 10s
-  maximumBackoff: 600s
-deadLetterPolicy:
-  deadLetterTopic: github-events-dlq
-  maxDeliveryAttempts: 3
-```
+Cloud Scheduler calls the protected collection trigger with `X-Scheduler-Secret`; it fails with 503 until the deployment has a configured secret. The trigger publishes the source's current article window to `opportunity-collect` and records source collection separately from user processing. Replaying an item lets a newly eligible user receive an assessment.
 
----
+The worker evaluates each user with a non-blank goal. A strict relevance result below 7 creates one durable `ignored` effect; relevance 7--10 atomically creates one observation and policy decision per `(eventId, uid)`, independently of whether Telegram is linked. Telegram affects only the delivery row: policy-eligible but unlinked users receive `deliveryStatus=suppressed`. Existing effects are read before AI analysis, so Pub/Sub/source redelivery cannot repeat a business effect or model call.
 
-## Cloud Scheduler Configuration
+On Cloud Run the workers receive authenticated Pub/Sub push requests at private services rather than running pull loops: a 2xx response ACKs the message and 503 requests redelivery. The deployment binds the dedicated Pub/Sub OIDC service account as `run.invoker` and updates both push subscriptions after each worker deployment.
 
-| Job Name | Schedule | Target | Payload |
-|----------|----------|--------|---------|
-| `opportunity-trigger` | `0 * * * *` (hourly, demo) | Pub/Sub `opportunity-collect` | `{"triggerId": "<auto>", "triggeredAt": "<auto>"}` |
+## Operational limits
 
-**Production schedule:** `0 9 * * *` (daily at 9 AM)
-
----
-
-## Idempotency Strategy
-
-### GitHub Events
-
-1. **Webhook handler:** Check `processed_events/{deliveryId}` before publishing to Pub/Sub
-2. **Worker:** Double-check `processed_events/{deliveryId}` before processing
-3. **After processing:** Write to `processed_events/{deliveryId}`
-
-This ensures exactly-once processing even with Pub/Sub at-least-once delivery.
-
-### Opportunities
-
-1. Track processed opportunity URLs per user (in observation metadata)
-2. Skip opportunities already seen (match by `sourceUrl`)
-3. Acceptable to re-notify if opportunity appears in multiple collection runs (edge case)
-
----
-
-## Error Handling
-
-| Scenario | Behavior |
-|----------|----------|
-| GitHub webhook invalid signature | Return 401, do not process |
-| GitHub webhook unknown event type | Return 200 (acknowledge), log and skip |
-| Gemini analysis fails | Retry via Pub/Sub. After 3 failures, dead letter queue. |
-| Firestore write fails | Retry via Pub/Sub. |
-| Telegram send fails | Log error, mark notification as failed. Do not retry. |
-| Opportunity source unavailable | Skip source, continue with others. Log warning. |
-| User not found for webhook | Log warning, skip. (Repo may have been disconnected.) |
+Pub/Sub remains at-least-once with configured dead-letter handling. Firestore transaction retries are expected and every transaction callback is deterministic. Required composite indexes are versioned in `backend/firestore.indexes.json`; deploy them before enabling filtered cursor queries.

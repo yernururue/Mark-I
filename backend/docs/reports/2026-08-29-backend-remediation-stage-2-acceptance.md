@@ -17,8 +17,8 @@
 
 | Gate | Result |
 |---|---|
-| Focused Stage-2 and PICT tests | 65 passed, 1 expected xfail |
-| Full backend suite | 112 passed, 15 expected xfail, 2 third-party deprecation warnings |
+| Focused Stage-2 and PICT tests | 48 passed |
+| Full backend suite | 115 passed, 15 expected xfail, 2 third-party deprecation warnings |
 | Python 3.11 syntax check | `python3.11 -m compileall app ai workers telegrambot tests` passed |
 | Docker build | `docker build -t mark-i-backend-stage2-verify .` passed |
 | Docker Python 3.11 import smoke | envelope, processed-event service, extractor registry and worker imports passed |

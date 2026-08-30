@@ -14,6 +14,7 @@ from fastapi import Depends, HTTPException
 
 from app.middleware.auth import get_current_user
 from app.services.chat_service import ChatService
+from app.services.dashboard_service import DashboardService
 from app.services.decision_service import DecisionService
 from app.services.github_service import GitHubService
 from app.services.observation_service import ObservationService
@@ -123,6 +124,10 @@ def get_user_service(db: FirestoreClient = Depends(get_db)) -> UserService:
 
 def get_chat_service(db: FirestoreClient = Depends(get_db)) -> ChatService:
     return ChatService(db)
+
+
+def get_dashboard_service(db: FirestoreClient = Depends(get_db)) -> DashboardService:
+    return DashboardService(db)
 
 
 def get_skill_service(db: FirestoreClient = Depends(get_db)) -> SkillService:

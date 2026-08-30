@@ -9,10 +9,9 @@ users.py — Эндпоинты профиля. Это "двери" нашего
 # Depends (от слова Зависеть) — магия FastAPI. Позволяет перед выполнением кода вызвать функцию-помощника.
 from fastapi import APIRouter, Depends, HTTPException
 
-# Импорт клиента базы данных
-from google.cloud.firestore_v1.client import Client as FirestoreClient
-
-from app.dependencies import get_firestore_client
+from app.api.contracts import error_responses
+from app.dependencies import get_user_service
+from app.errors import ConflictError
 from app.middleware.auth import get_current_user
 from app.models.user import CreateProfileRequest, UpdateProfileRequest, UserProfile
 from app.services.user_service import UserService
@@ -21,19 +20,10 @@ from app.services.user_service import UserService
 router = APIRouter(prefix="/me", tags=["User"])
 
 
-def _get_user_service(db: FirestoreClient = Depends(get_firestore_client)) -> UserService:
-    """
-    Эта функция сама запрашивает подключение к базе (get_firestore_client) 
-    и создает нашего "повара" (UserService). 
-    Эндпоинты будут просто просить: "Дайте мне готовый UserService".
-    """
-    return UserService(db)
-
-
-@router.get("", response_model=UserProfile)
+@router.get("", response_model=UserProfile, responses=error_responses(401, 404), operation_id="getProfile")
 async def get_profile(
     current_user: dict = Depends(get_current_user),
-    service: UserService = Depends(_get_user_service),
+    service: UserService = Depends(get_user_service),
 ):
     """
     Получить данные профиля (GET /api/v1/me).
@@ -59,39 +49,36 @@ async def get_profile(
     return profile
 
 
-@router.post("", response_model=UserProfile, status_code=201)
+@router.post("", response_model=UserProfile, status_code=201, responses=error_responses(401, 409, 422), operation_id="createProfile")
 async def create_profile(
     request: CreateProfileRequest,
     current_user: dict = Depends(get_current_user),
-    service: UserService = Depends(_get_user_service),
+    service: UserService = Depends(get_user_service),
 ):
     """
     Создать профиль (POST /api/v1/me).
     status_code=201 означает "Успешно создано" (обычно успешный ответ это 200).
     """
-    # Сначала проверяем, а не пытаемся ли мы создать профиль во второй раз?
-    existing = service.get_profile(current_user["uid"])
-    if existing is not None:
+    try:
+        profile = service.create_profile(
+            uid=current_user["uid"],
+            email=current_user["email"],
+            request=request,
+        )
+    except ConflictError:
         raise HTTPException(
             status_code=409, # 409 означает Conflict (Конфликт) - такой ресурс уже есть
             detail={"error": {"code": "CONFLICT", "message": "Профиль уже существует."}},
         )
 
-    # Передаем данные из запроса в сервис
-    profile = service.create_profile(
-        uid=current_user["uid"],
-        email=current_user["email"],
-        request=request,
-    )
-
     return profile
 
 
-@router.patch("", response_model=UserProfile)
+@router.patch("", response_model=UserProfile, responses=error_responses(401, 404, 422), operation_id="updateProfile")
 async def update_profile(
     request: UpdateProfileRequest,
     current_user: dict = Depends(get_current_user),
-    service: UserService = Depends(_get_user_service),
+    service: UserService = Depends(get_user_service),
 ):
     """
     Обновить профиль (PATCH /api/v1/me).

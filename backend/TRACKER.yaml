@@ -1,6 +1,6 @@
 ## ============================================================
 ## Mark-I Backend Tracker
-## Последнее обновление: 2026-08-29
+## Последнее обновление: 2026-08-30
 ## ============================================================
 
 ## --- ИНФРАСТРУКТУРА (День 0) ---
@@ -231,11 +231,11 @@ plans:
         depends_on: firestore-sdk-correctness
 
   - name: backend-remediation-stage-2-github-pipeline
-    path: docs/plans/2026-08-29-backend-remediation-stage-2-github-pipeline/
-    status: in-progress
+    path: docs/systems/backend-remediation-stage-2-github-pipeline/
+    status: shipped
     created: 2026-08-29
     started: 2026-08-29
-    shipped:
+    shipped: 2026-08-29
     source: docs/reports/2026-08-28-backend-remediation-roadmap.md
     approval_required: true
     tasks:
@@ -265,17 +265,121 @@ plans:
           - idempotency-and-retries
           - github-event-extractors
 
+  - name: backend-remediation-stage-3-api-firestore-contracts
+    path: docs/systems/backend-remediation-stage-3-api-firestore-contracts/
+    status: shipped
+    created: 2026-08-29
+    started: 2026-08-29
+    shipped: 2026-08-29
+    source: docs/reports/2026-08-28-backend-remediation-roadmap.md
+    tasks:
+      - name: canonical-openapi-and-errors
+        file: 01-canonical-openapi-and-errors.md
+        status: done
+        description: "Canonical OpenAPI parity tests and documented API error envelope"
+        depends_on: backend-remediation-stage-2-github-pipeline
+      - name: chat-and-observations
+        file: 02-chat-and-observations.md
+        status: done
+        description: "Chat request/history and observation filter/cursor contracts"
+        depends_on: canonical-openapi-and-errors
+      - name: telegram-dashboard-decisions-profile
+        file: 03-telegram-dashboard-decisions-profile.md
+        status: done
+        description: "Telegram link lifecycle, real dashboard/decisions and profile goal contract"
+        depends_on: chat-and-observations
+      - name: acceptance-and-shipping
+        file: 04-acceptance-and-shipping.md
+        status: done
+        description: "Locked Python 3.11 verification, acceptance report and system shipping"
+        depends_on: telegram-dashboard-decisions-profile
+
+  - name: backend-correctness-hardening
+    path: docs/systems/backend-correctness-hardening/
+    status: shipped
+    created: 2026-08-29
+    started: 2026-08-29
+    shipped: 2026-08-30
+    source: "Independent review of backend remediation Stages 1–3"
+    approval_required: true
+    tasks:
+      - name: runtime-and-ai-contract
+        file: 01-runtime-and-ai-contract.md
+        status: done
+        description: "Fix ADK typed invocation, strict analysis output, lazy role-aware settings and credential-free test seams"
+        depends_on: backend-remediation-stage-3-api-firestore-contracts
+
+      - name: github-ingress-and-attribution
+        file: 02-github-ingress-and-attribution.md
+        status: done
+        description: "Deduplicate repository hooks and attribute supported GitHub activities to the correct connected user"
+        depends_on: runtime-and-ai-contract
+
+      - name: github-evidence-and-assessment
+        file: 03-github-evidence-and-assessment.md
+        status: done
+        description: "Analyze bounded code evidence and keep proficiency separate from event significance"
+        depends_on:
+          - runtime-and-ai-contract
+          - github-ingress-and-attribution
+
+      - name: durable-effects-and-decisions
+        file: 04-durable-effects-and-decisions.md
+        status: done
+        description: "Persist immutable analysis and make observation, skill, decision and delivery effects retry-safe"
+        depends_on: github-evidence-and-assessment
+
+      - name: telegram-identity-and-delivery
+        file: 05-telegram-identity-and-delivery.md
+        status: done
+        description: "Enforce unique Telegram identity, private-chat routing, update idempotency and honest delivery states"
+        depends_on: durable-effects-and-decisions
+
+      - name: api-errors-and-profile
+        file: 06-api-errors-and-profile.md
+        status: done
+        description: "Enforce deep canonical OpenAPI parity, common errors, transactional profiles and uniform DI"
+        depends_on: runtime-and-ai-contract
+
+      - name: firestore-dashboard-and-migration
+        file: 07-firestore-dashboard-and-migration.md
+        status: done
+        description: "Migrate legacy decisions, derive real dashboard data and prove Firestore cursor/transaction semantics"
+        depends_on:
+          - durable-effects-and-decisions
+          - api-errors-and-profile
+
+      - name: chat-opportunities-and-deployment
+        file: 08-chat-opportunities-and-deployment.md
+        status: done
+        description: "Serialize cross-channel chat, close opportunity/security xfails and supply complete deploy configuration"
+        depends_on:
+          - telegram-identity-and-delivery
+          - api-errors-and-profile
+          - firestore-dashboard-and-migration
+
+      - name: acceptance-and-shipping
+        file: 09-acceptance-and-shipping.md
+        status: done
+        description: "Run locked Python 3.11, emulator, Docker and contract gates; publish acceptance evidence and sync trackers"
+        depends_on:
+          - runtime-and-ai-contract
+          - github-ingress-and-attribution
+          - github-evidence-and-assessment
+          - durable-effects-and-decisions
+          - telegram-identity-and-delivery
+          - api-errors-and-profile
+          - firestore-dashboard-and-migration
+          - chat-opportunities-and-deployment
+
 ## --- ЧТО СДЕЛАНО В ЭТОМ ЧАТЕ ---
 
 session_log:
-  date: 2026-08-27
-  summary: "Реализация Фазы 7 (Opportunity Discovery & Deploy) и завершение MVP"
+  date: 2026-08-30
+  summary: "Завершён backend-correctness-hardening: Stage 1–3 remediation, security/deploy closure и acceptance"
   completed:
-    - "Задача 07: Написаны firestore.rules для безопасности базы данных."
-    - "Задача 07: Создан OpportunityService для парсинга Dev.to API."
-    - "Задача 07: Создан OpportunityAnalyzer (Gemini) для оценки релевантности статей."
-    - "Задача 07: Создан OpportunityWorker (Pub/Sub pull) для асинхронной обработки."
-    - "Задача 07: Создан эндпоинт POST /api/v1/trigger/opportunities для Cloud Scheduler."
-    - "Задача 07: Написан cloudbuild.yaml для деплоя на Cloud Run."
-    - "Задача 07: Фаза backend-mvp официально завершена и переведена в статус shipped."
-  next_step: "Переход к frontend или проверка интеграции на проде."
+    - "Все F-01–F-13, R-01–R-05 и X-01–X-04 закрыты кодом и regression tests."
+    - "Canonical OpenAPI, API/Firestore/Event docs и Firestore indexes синхронизированы с runtime."
+    - "Cloud Run deployment использует private Pub/Sub push worker adapters и Secret Manager bindings."
+    - "Locked Python 3.11 + Firestore Emulator: 215 passed; Docker build/health/import smoke прошли."
+  next_step: "Backend remediation shipped; production deploy требует создать documented secrets, Pub/Sub subscriptions и Cloud Build substitutions."
