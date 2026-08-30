@@ -34,6 +34,7 @@ export interface AgentCustomization {
 
 export interface AgentSummary {
   id: string;
+  schemaVersion: number;
   name: string;
   role: string;
   template: AgentTemplate;
@@ -142,7 +143,7 @@ export type MessageStatus = "sent" | "sending" | "failed";
 export interface Message {
   id: string;
   conversationId: string;
-  agentId?: string;
+  agentId: string;
   runId?: string;
   role: MessageRole;
   content: string;

@@ -1,4 +1,13 @@
 import { AppError } from "./errors";
+import {
+  asRecord,
+  decodeList,
+  enumValue,
+  requiredNumber,
+  requiredString,
+  stringArray,
+  timestamp,
+} from "./contract-utils";
 import type {
   Agent,
   AgentStatus,
@@ -8,85 +17,32 @@ import type {
   UpdateAgentInput,
 } from "@/types/models";
 
-type UnknownRecord = Record<string, unknown>;
-
-function asRecord(value: unknown, label: string): UnknownRecord {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new AppError(`The ${label} response is invalid.`, "invalid-response");
-  }
-
-  return value as UnknownRecord;
-}
-
-function requiredString(value: unknown, label: string): string {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new AppError(`The ${label} field is missing or invalid.`, "invalid-response");
-  }
-
-  return value;
-}
-
-function optionalString(value: unknown, fallback = ""): string {
-  return typeof value === "string" ? value : fallback;
-}
-
-function stringArray(value: unknown, label: string): string[] {
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    throw new AppError(`The ${label} field is invalid.`, "invalid-response");
-  }
-
-  return value;
-}
-
-function enumValue<T extends string>(
-  value: unknown,
-  allowed: readonly T[],
-  fallback: T,
-  label: string,
-): T {
-  if (value === undefined) return fallback;
-  if (typeof value === "string" && allowed.includes(value as T)) {
-    return value as T;
-  }
-
-  throw new AppError(`The ${label} field is invalid.`, "invalid-response");
-}
-
-function timestamp(value: unknown, label: string): string {
-  if (typeof value === "string" && value) return value;
-  if (
-    value &&
-    typeof value === "object" &&
-    "toDate" in value &&
-    typeof value.toDate === "function"
-  ) {
-    return value.toDate().toISOString();
-  }
-
-  throw new AppError(`The ${label} field is missing or invalid.`, "invalid-response");
-}
-
 export function decodeAgent(value: unknown, documentId?: string): Agent {
   const data = asRecord(value, "agent");
-  const id = requiredString(data.id ?? documentId, "agent id");
+  const id = requiredString(data.agentId ?? data.id ?? documentId, "agent id");
+
+  if (documentId && id !== documentId) {
+    throw new AppError(
+      "The agent identifier does not match its Firestore document.",
+      "invalid-response",
+    );
+  }
 
   return {
     id,
+    schemaVersion: requiredNumber(
+      data.schemaVersion,
+      "agent schemaVersion",
+      { min: 1, integer: true },
+    ),
     name: requiredString(data.name, "agent name"),
     role: requiredString(data.role, "agent role"),
-    template: enumValue<AgentTemplate>(
-      data.template,
-      ["mentor", "designer", "custom"],
-      "custom",
-      "agent template",
-    ),
-    objective: optionalString(data.objective),
-    instructions: optionalString(data.instructions),
+    template: enumValue<AgentTemplate>(data.template, ["mentor", "designer", "custom"], "agent template"),
+    objective: requiredString(data.objective, "agent objective"),
+    instructions: requiredString(data.instructions, "agent instructions"),
     tone: enumValue<AgentTone>(
       data.tone,
       ["chill", "normal", "brutal", "concise"],
-      "normal",
       "agent tone",
     ),
     toolGrants: stringArray(data.toolGrants, "agent tool grants"),
@@ -94,7 +50,6 @@ export function decodeAgent(value: unknown, documentId?: string): Agent {
     status: enumValue<AgentStatus>(
       data.status,
       ["active", "paused", "archived"],
-      "active",
       "agent status",
     ),
     createdAt: timestamp(data.createdAt, "agent createdAt"),
@@ -103,11 +58,19 @@ export function decodeAgent(value: unknown, documentId?: string): Agent {
 }
 
 export function decodeAgentList(value: unknown): Agent[] {
-  if (!Array.isArray(value)) {
-    throw new AppError("The agents response is invalid.", "invalid-response");
-  }
+  return decodeList(value, "agents", (item) => decodeAgent(item));
+}
 
-  return value.map((item) => decodeAgent(item));
+export function serializeCreateAgentInput(
+  input: CreateAgentInput,
+): Record<string, unknown> {
+  return { ...normalizeCreateAgentInput(input) };
+}
+
+export function serializeUpdateAgentInput(
+  input: UpdateAgentInput,
+): Record<string, unknown> {
+  return { ...normalizeUpdateAgentInput(input) };
 }
 
 export function normalizeCreateAgentInput(input: CreateAgentInput): CreateAgentInput {

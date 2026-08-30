@@ -9,8 +9,8 @@ areas:
 
   frontend:
     status: in-progress
-    current_plan: frontend-product-readiness
-    notes: "Frontend review completed 2026-08-29 for Multiple Customizable Agents. Dashboard UI is frozen; next work is dead-code cleanup, repository hygiene, validated agent models, atomic onboarding, isolated conversations, and backend integration behind the current interface."
+    current_plan: frontend-prd-trd-alignment
+    notes: "Contract and repository alignment completed 2026-08-30 without dashboard visual changes. Frontend DTO boundaries are validated; atomic onboarding, isolated remote conversations, and management integration remain in the active alignment plan, with backend gaps documented for API owner confirmation."
 
 integration:
   status: planned
@@ -28,3 +28,7 @@ plans:
     area: frontend
     status: in-progress
     created: 2026-08-29
+  - name: frontend-prd-trd-alignment
+    area: frontend
+    status: in-progress
+    created: 2026-08-30

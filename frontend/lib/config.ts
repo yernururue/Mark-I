@@ -15,9 +15,7 @@ function resolveDataMode(): DataMode {
   }
 
   if (configuredMode === "firebase" || configuredMode === undefined) {
-    return configuredMode === undefined && process.env.NODE_ENV !== "production"
-      ? "local"
-      : "firebase";
+    return "firebase";
   }
 
   throw new Error(
@@ -25,9 +23,21 @@ function resolveDataMode(): DataMode {
   );
 }
 
+const dataMode = resolveDataMode();
+
+if (
+  process.env.NODE_ENV === "production" &&
+  dataMode === "firebase" &&
+  !configuredApiBaseUrl
+) {
+  throw new Error(
+    "NEXT_PUBLIC_API_URL is required for a production Firebase build.",
+  );
+}
+
 export const appConfig = {
   apiBaseUrl: configuredApiBaseUrl,
-  dataMode: resolveDataMode(),
+  dataMode,
   telegramBotUsername:
     process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "mark_i_bot",
 } satisfies {

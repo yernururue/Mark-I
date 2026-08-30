@@ -66,7 +66,7 @@ NEXT_PUBLIC_TELEGRAM_BOT_USERNAME
 
 Do not place GitHub secrets, Telegram bot tokens, service-account paths, Pub/Sub configuration, or other backend secrets in `frontend/.env.local`.
 
-`NEXT_PUBLIC_DATA_MODE` currently accepts `local` or `firebase`. Local mode uses `localStorage` and simulated responses; Firebase mode uses Firebase Auth/Firestore reads plus the REST API for mutations.
+`NEXT_PUBLIC_DATA_MODE` accepts `local` or `firebase`. Local mode must be selected explicitly, uses validated `localStorage` data and simulators, and is rejected by production builds. Firebase is the non-local default; production Firebase builds also require `NEXT_PUBLIC_API_URL`.
 
 ## Architecture
 
@@ -74,14 +74,14 @@ Do not place GitHub secrets, Telegram bot tokens, service-account paths, Pub/Sub
 - `components/` — shared and feature UI
 - `contexts/` — Firebase authentication state
 - `hooks/` — current feature state and subscriptions
-- `services/` — typed operations and data-source selection
+- `services/` — resource repository contracts, typed operations, and explicit data-source selection
 - `services/adapters/` — local development persistence
 - `types/` — current shared models
-- `lib/` — API, Firebase, configuration, error, and ID utilities
+- `lib/` — runtime DTO decoders, command serializers, API, Firebase, configuration, error, and ID utilities
 - `docs/` — frontend plans and reviews
 
-The target refactor will keep these concepts while splitting server state by feature, validating agent DTOs at data boundaries, and isolating each agent conversation.
+External REST, Firestore, and local-preview payloads remain `unknown` until a resource decoder accepts them. Unsupported remote capabilities return actionable backend-contract errors and never fabricate production data.
 
 ## Review and plan
 
-See [the Multiple Customizable Agents frontend review](docs/2026-08-29-multiple-agents-frontend-review.md) and the active [frontend product-readiness plan](docs/plans/2026-08-29-frontend-product-readiness/plan.md).
+See [the Multiple Customizable Agents frontend review](docs/2026-08-29-multiple-agents-frontend-review.md) and the active [PRD/TRD alignment plan](docs/plans/2026-08-30-frontend-prd-trd-alignment/plan.md).

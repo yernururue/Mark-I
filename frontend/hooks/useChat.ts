@@ -45,7 +45,9 @@ export function useChat(uid: string | undefined) {
         const activeConversation = initialAgentId
           ? await chatService.getOrCreateConversation(uid, initialAgentId)
           : null;
-        const history = activeConversation ? await chatService.getMessages(uid, activeConversation.id) : [];
+        const history = activeConversation
+          ? await chatService.getMessages(uid, activeConversation)
+          : [];
         if (cancelled) return;
         setAgents(roster);
         setSelectedAgentId(activeConversation?.agentId ?? null);
@@ -69,7 +71,7 @@ export function useChat(uid: string | undefined) {
     setError(null);
     try {
       const nextConversation = await chatService.getOrCreateConversation(uid, agentId);
-      const nextMessages = await chatService.getMessages(uid, nextConversation.id);
+      const nextMessages = await chatService.getMessages(uid, nextConversation);
       setSelectedAgentId(agentId);
       setConversation(nextConversation);
       setMessages(nextMessages);

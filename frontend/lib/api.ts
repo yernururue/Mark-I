@@ -2,30 +2,61 @@ import { getApiBaseUrl } from "./config";
 import { AppError } from "./errors";
 import { auth } from "./firebase";
 
-interface ApiErrorBody {
-  detail?: string;
-  message?: string;
-  error?: {
-    code?: string;
-    message?: string;
-  };
+interface DecodedApiError {
+  code: string;
+  message: string;
 }
 
-export async function fetchApi<T>(
+function decodeApiError(value: unknown): DecodedApiError {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { code: "api", message: "The request could not be completed." };
+  }
+
+  const body = value as Record<string, unknown>;
+  const detail =
+    body.detail && typeof body.detail === "object" && !Array.isArray(body.detail)
+      ? (body.detail as Record<string, unknown>)
+      : undefined;
+  const nestedError =
+    body.error && typeof body.error === "object" && !Array.isArray(body.error)
+      ? (body.error as Record<string, unknown>)
+      : detail?.error &&
+          typeof detail.error === "object" &&
+          !Array.isArray(detail.error)
+        ? (detail.error as Record<string, unknown>)
+        : undefined;
+
+  const message =
+    (typeof nestedError?.message === "string" && nestedError.message) ||
+    (typeof body.detail === "string" && body.detail) ||
+    (typeof body.message === "string" && body.message) ||
+    "The request could not be completed.";
+  const code =
+    (typeof nestedError?.code === "string" && nestedError.code) || "api";
+
+  return { code, message };
+}
+
+export async function fetchApi(
   endpoint: string,
   options: RequestInit = {},
-): Promise<T> {
+): Promise<unknown> {
   await auth.authStateReady();
   const token = await auth.currentUser?.getIdToken();
+  if (!token) {
+    throw new AppError(
+      "Sign in again before contacting the Mark-I service.",
+      "unauthenticated",
+      401,
+    );
+  }
   const headers = new Headers(options.headers);
 
   if (!headers.has("Content-Type") && options.body) {
     headers.set("Content-Type", "application/json");
   }
 
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
+  headers.set("Authorization", `Bearer ${token}`);
 
   let response: Response;
 
@@ -42,17 +73,25 @@ export async function fetchApi<T>(
   }
 
   if (!response.ok) {
-    const errorBody = (await response.json().catch(() => ({}))) as ApiErrorBody;
+    const errorBody = decodeApiError(await response.json().catch(() => undefined));
     throw new AppError(
-      errorBody.error?.message ?? errorBody.detail ?? errorBody.message ?? "The request could not be completed.",
-      errorBody.error?.code ?? "api",
+      errorBody.message,
+      errorBody.code,
       response.status,
     );
   }
 
   if (response.status === 204) {
-    return undefined as T;
+    return undefined;
   }
 
-  return (await response.json()) as T;
+  try {
+    return (await response.json()) as unknown;
+  } catch {
+    throw new AppError(
+      "The Mark-I service returned an invalid JSON response.",
+      "invalid-response",
+      response.status,
+    );
+  }
 }

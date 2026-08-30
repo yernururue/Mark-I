@@ -1,114 +1,108 @@
 import { doc, getDoc } from "firebase/firestore";
-import { appConfig } from "@/lib/config";
 import { fetchApi } from "@/lib/api";
+import { appConfig } from "@/lib/config";
 import { db } from "@/lib/firebase";
+import {
+  decodeUserProfile,
+  serializeCreateProfileCommand,
+  serializeUpdateProfileCommand,
+} from "@/lib/resource-contracts";
 import type { OnboardingInput, UserProfile } from "@/types/models";
+import type { ProfileRepository } from "./repository-contracts";
 import { getLocalProfile, saveLocalProfile } from "./adapters/local-store";
 
-function isIntensity(value: unknown): value is UserProfile["intensity"] {
-  return value === "chill" || value === "normal" || value === "brutal";
-}
-
-function isLanguage(value: unknown): value is UserProfile["language"] {
-  return value === "en" || value === "ru" || value === "kk";
-}
-
-function toProfile(uid: string, data: Record<string, unknown>): UserProfile | null {
-  const goal = typeof data.goal === "string" ? data.goal : "";
-  const intensity = isIntensity(data.intensity) ? data.intensity : "normal";
-  const language = isLanguage(data.language) ? data.language : "en";
-  const onboardingCompleted =
-    data.onboardingCompleted === true || Boolean(goal.trim());
-
-  if (!onboardingCompleted) return null;
-
-  const skills =
-    data.skills && typeof data.skills === "object"
-      ? (data.skills as Record<string, number>)
-      : {};
-
-  return {
-    uid,
-    goal,
-    intensity,
-    language,
-    onboardingCompleted,
-    skills,
-    displayName:
-      typeof data.displayName === "string" ? data.displayName : undefined,
-    email: typeof data.email === "string" ? data.email : undefined,
-  };
-}
-
-export const userService = {
-  async getProfile(uid: string): Promise<UserProfile | null> {
-    if (appConfig.dataMode === "local") {
-      return getLocalProfile(uid);
-    }
-
-    const profileSnapshot = await getDoc(doc(db, "users", uid));
-    return profileSnapshot.exists()
-      ? toProfile(uid, profileSnapshot.data())
-      : null;
+const localProfileRepository: ProfileRepository = {
+  async getProfile(uid) {
+    const stored = getLocalProfile(uid);
+    return stored === null ? null : decodeUserProfile(stored, uid);
   },
 
-  async getOnboardingStatus(uid: string): Promise<boolean> {
-    const profile = await this.getProfile(uid);
-    return profile?.onboardingCompleted === true;
-  },
-
-  async submitOnboarding(
-    uid: string,
-    input: OnboardingInput,
-    identity: { displayName?: string | null; email?: string | null },
-  ): Promise<UserProfile> {
-    if (appConfig.dataMode === "local") {
-      const profile: UserProfile = {
+  async createProfile(uid, input, identity) {
+    const command = serializeCreateProfileCommand(input, identity);
+    const profile = decodeUserProfile(
+      {
         uid,
-        goal: input.goal.trim(),
-        intensity: input.intensity,
-        language: input.language,
+        ...command,
         onboardingCompleted: true,
         skills: {},
-        displayName: identity.displayName ?? undefined,
-        email: identity.email ?? undefined,
-      };
-      saveLocalProfile(profile);
-      return profile;
-    }
-
-    return fetchApi<UserProfile>("/me", {
-      method: "POST",
-      body: JSON.stringify({
-        displayName: identity.displayName ?? identity.email ?? "Mark-I user",
-        ...input,
-      }),
-    });
+      },
+      uid,
+    );
+    saveLocalProfile(profile);
+    return profile;
   },
 
-  async updateProfile(
-    uid: string,
-    input: OnboardingInput,
-  ): Promise<UserProfile> {
-    if (appConfig.dataMode === "local") {
-      const current = getLocalProfile(uid);
-      const profile: UserProfile = {
+  async updateProfile(uid, input) {
+    const current = await this.getProfile(uid);
+    const command = serializeUpdateProfileCommand(input);
+    const profile = decodeUserProfile(
+      {
         uid,
-        goal: input.goal.trim(),
-        intensity: input.intensity,
-        language: input.language,
+        ...command,
         onboardingCompleted: true,
         skills: current?.skills ?? {},
         displayName: current?.displayName,
         email: current?.email,
-      };
-      saveLocalProfile(profile);
-      return profile;
-    }
+      },
+      uid,
+    );
+    saveLocalProfile(profile);
+    return profile;
+  },
+};
 
-    return fetchApi<UserProfile>("/me", {
-      method: "PATCH",
-      body: JSON.stringify(input),
+const firebaseProfileRepository: ProfileRepository = {
+  async getProfile(uid) {
+    const profileSnapshot = await getDoc(doc(db, "users", uid));
+    return profileSnapshot.exists()
+      ? decodeUserProfile(profileSnapshot.data(), uid)
+      : null;
+  },
+
+  async createProfile(uid, input, identity) {
+    const response = await fetchApi("/me", {
+      method: "POST",
+      body: JSON.stringify(serializeCreateProfileCommand(input, identity)),
     });
+    return decodeUserProfile(response, uid);
+  },
+
+  async updateProfile(uid, input) {
+    const response = await fetchApi("/me", {
+      method: "PATCH",
+      body: JSON.stringify(serializeUpdateProfileCommand(input)),
+    });
+    return decodeUserProfile(response, uid);
+  },
+};
+
+const profileRepository =
+  appConfig.dataMode === "local"
+    ? localProfileRepository
+    : firebaseProfileRepository;
+
+export const userService = {
+  getProfile(uid: string): Promise<UserProfile | null> {
+    return profileRepository.getProfile(uid);
+  },
+
+  async getOnboardingStatus(uid: string): Promise<boolean> {
+    const profile = await profileRepository.getProfile(uid);
+    return profile?.onboardingCompleted === true;
+  },
+
+  submitOnboarding(
+    uid: string,
+    input: OnboardingInput,
+    identity: { displayName?: string | null; email?: string | null },
+  ): Promise<UserProfile> {
+    return profileRepository.createProfile(uid, input, identity);
+  },
+
+  updateProfile(
+    uid: string,
+    input: OnboardingInput,
+  ): Promise<UserProfile> {
+    return profileRepository.updateProfile(uid, input);
   },
 };

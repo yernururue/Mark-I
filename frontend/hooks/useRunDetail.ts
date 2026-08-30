@@ -2,13 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getErrorMessage } from "@/lib/errors";
-import { agentsService } from "@/services/agents";
 import { runsService } from "@/services/runs";
-import type { Agent, AgentRun, Artifact } from "@/types/models";
+import type { AgentRun, Artifact } from "@/types/models";
 
 interface RunDetailState {
-  agent: Agent | null;
-  agents: Agent[];
   artifacts: Artifact[];
   loading: boolean;
   error: string | null;
@@ -16,8 +13,6 @@ interface RunDetailState {
 }
 
 const EMPTY_STATE: RunDetailState = {
-  agent: null,
-  agents: [],
   artifacts: [],
   loading: true,
   error: null,
@@ -39,10 +34,7 @@ export function useRunDetail(uid: string | undefined, runId: string | undefined)
 
     const load = async () => {
       try {
-        const [run, agents] = await Promise.all([
-          runsService.getRun(uid, runId),
-          agentsService.getAgents(uid),
-        ]);
+        const run = await runsService.getRun(uid, runId);
         const artifacts = await Promise.all(
           run.artifactIds.map((artifactId) =>
             runsService.getArtifact(uid, artifactId),
@@ -51,8 +43,6 @@ export function useRunDetail(uid: string | undefined, runId: string | undefined)
         if (cancelled) return;
 
         setState({
-          agent: agents.find((item) => item.id === run.agentId) ?? null,
-          agents,
           artifacts,
           loading: false,
           error: null,

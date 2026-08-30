@@ -1,4 +1,26 @@
 plans:
+  - name: frontend-prd-trd-alignment
+    path: docs/plans/2026-08-30-frontend-prd-trd-alignment/
+    status: in-progress
+    created: 2026-08-30
+    started: 2026-08-30
+    shipped:
+    tasks:
+      - name: contract-and-repository-alignment
+        file: 01-contract-and-repository-alignment.md
+        status: done
+      - name: atomic-onboarding-and-catalog
+        file: 02-atomic-onboarding-and-catalog.md
+        status: pending
+      - name: agent-isolated-chat-integration
+        file: 03-agent-isolated-chat-integration.md
+        status: pending
+      - name: management-integrations-and-runs
+        file: 04-management-integrations-and-runs.md
+        status: pending
+      - name: validation-cleanup-and-release-gate
+        file: 05-validation-cleanup-and-release-gate.md
+        status: pending
   - name: frontend-product-readiness
     path: docs/plans/2026-08-29-frontend-product-readiness/
     status: in-progress

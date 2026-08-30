@@ -16,3 +16,14 @@ export function getErrorMessage(error: unknown, fallback: string): string {
 
   return fallback;
 }
+
+export function backendContractUnavailable(
+  capability: string,
+  requirement: string,
+): AppError {
+  return new AppError(
+    `${capability} is unavailable in remote mode. The backend must provide ${requirement}.`,
+    "backend-contract",
+    503,
+  );
+}

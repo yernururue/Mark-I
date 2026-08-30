@@ -1,24 +1,42 @@
-import { fetchApi } from "@/lib/api";
 import { appConfig } from "@/lib/config";
-import { AppError } from "@/lib/errors";
+import { backendContractUnavailable } from "@/lib/errors";
 import { createId } from "@/lib/id";
-import type { Agent, AgentRun, Conversation, Message, SendMessageInput } from "@/types/models";
-import { getLocalAgents, getLocalConversations, getLocalMessages, getLocalRuns, saveLocalConversations, saveLocalMessages, saveLocalRuns } from "./adapters/local-store";
-
-interface ApiMessagesResponse {
-  messages: Array<{
-    id: string;
-    role: "user" | "agent";
-    agentId?: string;
-    runId?: string;
-    text: string;
-    createdAt: string;
-  }>;
-}
+import {
+  decodeConversation,
+  decodeConversationList,
+  decodeMessage,
+  decodeMessageList,
+  decodeRunList,
+  serializeSendMessageCommand,
+} from "@/lib/resource-contracts";
+import { decodeAgentList } from "@/lib/agent-contracts";
+import type {
+  Agent,
+  AgentRun,
+  Conversation,
+  Message,
+  SendMessageInput,
+} from "@/types/models";
+import {
+  getLocalAgents,
+  getLocalConversations,
+  getLocalMessages,
+  getLocalRuns,
+  saveLocalConversations,
+  saveLocalMessages,
+  saveLocalRuns,
+} from "./adapters/local-store";
+import type {
+  ConversationRepository,
+  MessageRepository,
+} from "./repository-contracts";
 
 function localAgentReply(agent: Agent, message: string): string {
   const normalized = message.toLowerCase();
-  if (agent.template === "mentor" && (normalized.includes("github") || normalized.includes("skill"))) {
+  if (
+    agent.template === "mentor" &&
+    (normalized.includes("github") || normalized.includes("skill"))
+  ) {
     return `${agent.name}: Connect GitHub in Settings, then choose which repositories this agent may use. I’ll attribute observations and decisions to this agent.`;
   }
   if (agent.template === "designer") {
@@ -27,83 +45,115 @@ function localAgentReply(agent: Agent, message: string): string {
   return `${agent.name}: I have the assignment. What output should I produce, and which workspace context may I use?`;
 }
 
+function localConversations(uid: string): Conversation[] {
+  return decodeConversationList(getLocalConversations(uid));
+}
+
 function upsertConversation(uid: string, conversation: Conversation): void {
-  const current = getLocalConversations(uid);
-  saveLocalConversations(uid, [conversation, ...current.filter((item) => item.id !== conversation.id)]);
+  const current = localConversations(uid);
+  saveLocalConversations(uid, [
+    conversation,
+    ...current.filter((item) => item.id !== conversation.id),
+  ]);
 }
 
-function getOrCreateLocalConversation(uid: string, agentId: string): Conversation {
-  const existing = getLocalConversations(uid).find(
-    (conversation) => conversation.agentId === agentId,
-  );
-  if (existing) return existing;
+const localConversationRepository: ConversationRepository = {
+  async getConversations(uid, agentId) {
+    const conversations = localConversations(uid);
+    return agentId
+      ? conversations.filter((conversation) => conversation.agentId === agentId)
+      : conversations;
+  },
 
-  const conversation: Conversation = {
-    id: `agent-conversation-${agentId}`,
-    agentId,
-    title: "Agent chat",
-    updatedAt: new Date().toISOString(),
-  };
-  upsertConversation(uid, conversation);
-  return conversation;
-}
+  async getOrCreateConversation(uid, agentId) {
+    const existing = localConversations(uid).find(
+      (conversation) => conversation.agentId === agentId,
+    );
+    if (existing) return existing;
 
-function unavailableRemoteConversation(): never {
-  throw new AppError(
-    "Agent-specific conversations require the backend conversation endpoints before remote chat can be used.",
-    "backend-contract",
-  );
-}
+    const conversation = decodeConversation({
+      id: `agent-conversation-${agentId}`,
+      agentId,
+      title: "Agent chat",
+      updatedAt: new Date().toISOString(),
+    });
+    upsertConversation(uid, conversation);
+    return conversation;
+  },
+};
 
-export const chatService = {
-  async getOrCreateConversation(
-    uid: string,
-    agentId: string,
-  ): Promise<Conversation> {
-    if (appConfig.dataMode === "local") {
-      return getOrCreateLocalConversation(uid, agentId);
+const firebaseConversationRepository: ConversationRepository = {
+  async getConversations() {
+    throw backendContractUnavailable(
+      "Agent-specific conversations",
+      "an authenticated conversation list endpoint filterable by agentId",
+    );
+  },
+
+  async getOrCreateConversation() {
+    throw backendContractUnavailable(
+      "Agent-specific conversations",
+      "authenticated conversation list/create/select endpoints keyed by agentId",
+    );
+  },
+};
+
+const localMessageRepository: MessageRepository = {
+  async getMessages(uid, conversation) {
+    const messages = decodeMessageList(getLocalMessages(uid, conversation.id));
+    if (
+      messages.some(
+        (message) =>
+          message.conversationId !== conversation.id ||
+          message.agentId !== conversation.agentId,
+      )
+    ) {
+      throw new Error("Stored messages do not belong to the selected agent conversation.");
+    }
+    return messages;
+  },
+
+  async sendMessage(uid, input) {
+    serializeSendMessageCommand(input);
+    const agents = decodeAgentList(getLocalAgents(uid));
+    const agent = agents.find((item) => item.id === input.agentId);
+    if (!agent) throw new Error("The selected agent is not available.");
+
+    const existing = decodeMessageList(
+      getLocalMessages(uid, input.conversationId),
+    );
+    if (existing.some((message) => message.agentId !== input.agentId)) {
+      throw new Error("Stored messages do not belong to the selected agent.");
     }
 
-    return unavailableRemoteConversation();
-  },
-
-  async getMessages(uid: string, conversationId: string): Promise<Message[]> {
-    if (appConfig.dataMode === "local") return getLocalMessages(uid, conversationId);
-    const response = await fetchApi<ApiMessagesResponse>("/messages?limit=100&channel=web");
-    return response.messages.map((message) => ({
-      id: message.id,
-      conversationId,
-      agentId: message.agentId,
-      runId: message.runId,
-      role: message.role,
-      content: message.text,
-      createdAt: message.createdAt,
-      status: "sent",
-    }));
-  },
-
-  async sendMessage(uid: string, input: SendMessageInput): Promise<Message[]> {
-    if (appConfig.dataMode !== "local") return unavailableRemoteConversation();
-
-    const agent = getLocalAgents(uid).find((item) => item.id === input.agentId);
-    if (!agent) throw new Error("The selected agent is not available.");
-    const existing = getLocalMessages(uid, input.conversationId);
-    const userMessage: Message = {
+    const userMessage = decodeMessage({
       id: input.clientMessageId,
       conversationId: input.conversationId,
       agentId: input.agentId,
       role: "user",
-      content: input.message,
+      content: input.message.trim(),
       createdAt: new Date().toISOString(),
       status: "sent",
-    };
-    const withoutDuplicate = existing.filter((message) => message.id !== input.clientMessageId);
-    saveLocalMessages(uid, input.conversationId, [...withoutDuplicate, userMessage]);
+    });
+    const withoutDuplicate = existing.filter(
+      (message) => message.id !== input.clientMessageId,
+    );
+    saveLocalMessages(uid, input.conversationId, [
+      ...withoutDuplicate,
+      userMessage,
+    ]);
     await new Promise((resolve) => window.setTimeout(resolve, 650));
+
+    const currentMessages = decodeMessageList(
+      getLocalMessages(uid, input.conversationId),
+    );
+    if (!currentMessages.some((message) => message.id === userMessage.id)) {
+      return [];
+    }
 
     const timestamp = new Date().toISOString();
     const runId = createId("run-chat");
-    const response: Message = {
+    const response = decodeMessage({
       id: createId("message"),
       conversationId: input.conversationId,
       agentId: agent.id,
@@ -112,7 +162,7 @@ export const chatService = {
       content: localAgentReply(agent, input.message),
       createdAt: timestamp,
       status: "sent",
-    };
+    });
     const run: AgentRun = {
       id: runId,
       agentId: agent.id,
@@ -124,19 +174,62 @@ export const chatService = {
       startedAt: timestamp,
       finishedAt: timestamp,
     };
-    saveLocalRuns(uid, [run, ...getLocalRuns(uid)]);
-    const responses = [response];
-    saveLocalMessages(uid, input.conversationId, [...withoutDuplicate, userMessage, ...responses]);
-    upsertConversation(uid, {
-      id: input.conversationId,
-      agentId: input.agentId,
-      title: input.message.slice(0, 48),
-      updatedAt: response.createdAt,
-    });
-    return responses;
+    const runs = decodeRunList(getLocalRuns(uid));
+    saveLocalRuns(uid, [run, ...runs]);
+    saveLocalMessages(uid, input.conversationId, [
+      ...withoutDuplicate,
+      userMessage,
+      response,
+    ]);
+    upsertConversation(
+      uid,
+      decodeConversation({
+        id: input.conversationId,
+        agentId: input.agentId,
+        title: input.message.slice(0, 48),
+        updatedAt: response.createdAt,
+      }),
+    );
+    return [response];
+  },
+};
+
+const firebaseMessageRepository: MessageRepository = {
+  async getMessages() {
+    throw backendContractUnavailable(
+      "Agent-specific message history",
+      "conversation-scoped messages carrying conversationId and agentId",
+    );
   },
 
+  async sendMessage() {
+    throw backendContractUnavailable(
+      "Agent-specific chat",
+      "POST /api/v1/chat accepting agentId, conversationId, text, and clientMessageId",
+    );
+  },
+};
+
+const conversationRepository =
+  appConfig.dataMode === "local"
+    ? localConversationRepository
+    : firebaseConversationRepository;
+const messageRepository =
+  appConfig.dataMode === "local"
+    ? localMessageRepository
+    : firebaseMessageRepository;
+
+export const chatService = {
+  getConversations: conversationRepository.getConversations.bind(
+    conversationRepository,
+  ),
+  getOrCreateConversation: conversationRepository.getOrCreateConversation.bind(
+    conversationRepository,
+  ),
+  getMessages: messageRepository.getMessages.bind(messageRepository),
+  sendMessage: messageRepository.sendMessage.bind(messageRepository),
+
   retryMessage(uid: string, input: SendMessageInput): Promise<Message[]> {
-    return this.sendMessage(uid, input);
+    return messageRepository.sendMessage(uid, input);
   },
 };

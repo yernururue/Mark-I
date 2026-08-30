@@ -7,20 +7,23 @@ import RouteGuard from "@/components/RouteGuard";
 import RouteState from "@/components/RouteState";
 import DashboardShell from "@/components/dashboard/DashboardShell";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAgentRoster } from "@/hooks/useAgentRoster";
 import { useRunDetail } from "@/hooks/useRunDetail";
 import { runsService } from "@/services/runs";
 
 function RunContent() {
   const params = useParams<{ runId: string }>();
   const { user } = useAuth();
-  const { agent, agents, artifacts, loading, error, retry, run } = useRunDetail(
+  const { agents, loading: rosterLoading, error: rosterError, retry: retryRoster } = useAgentRoster(user?.uid);
+  const { artifacts, loading, error, retry, run } = useRunDetail(
     user?.uid,
     params.runId,
   );
 
-  if (loading) return <RouteState title="Loading run" />;
-  if (error) return <RouteState title="Run unavailable" message={error} onRetry={retry} />;
+  if (loading || rosterLoading) return <RouteState title="Loading run" />;
+  if (error || rosterError) return <RouteState title="Run unavailable" message={error ?? rosterError ?? undefined} onRetry={() => { retry(); retryRoster(); }} />;
   if (!run) return <RouteState title="Run not found" message="This run is not available in the workspace." />;
+  const agent = agents.find((item) => item.id === run.agentId) ?? null;
   const canCancel = run.status === "queued" || run.status === "running" || run.status === "waiting-for-user";
 
   const cancelRun = async () => {
