@@ -1,97 +1,132 @@
+substitutions:
+  _WEBHOOK_BASE_URL: 'https://mark-i-api-691051892786.us-central1.run.app'
+  _TELEGRAM_BOT_USERNAME: 'mark1_dev_bot'
+  _TELEGRAM_WEBHOOK_URL: 'https://mark-i-api-691051892786.us-central1.run.app/api/v1/webhooks/telegram'
+  _FRONTEND_URL: 'https://mark-i-506218.web.app'
+  _PUBSUB_PUSH_SERVICE_ACCOUNT: 'mark-i-pubsub-push@mark-i-506218.iam.gserviceaccount.com'
+  # Bootstrap deploys leave existing pull subscriptions unchanged. Authenticated
+  # push is enabled only after the healthy-revision gate and explicit approval.
+  _CONFIGURE_PUBSUB_PUSH: 'false'
+
 steps:
-  # Build the container image
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/mark-i-backend:$COMMIT_SHA', '.']
+  - id: 'build-image'
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID'
+      - '.'
     dir: 'backend'
-  
-  # Push the container image to Container Registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/mark-i-backend:$COMMIT_SHA']
-  
-  # Deploy API to Cloud Run
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+
+  - id: 'push-image'
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID'
+
+  - id: 'deploy-api'
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
       - 'mark-i-api'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/mark-i-backend:$COMMIT_SHA'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID'
       - '--region'
       - 'us-central1'
       - '--platform'
       - 'managed'
+      - '--service-account'
+      - 'mark-i-api-runtime@$PROJECT_ID.iam.gserviceaccount.com'
       - '--allow-unauthenticated'
       - '--set-env-vars'
-      - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,FIRESTORE_DATABASE=mark-i,WEBHOOK_BASE_URL=${_WEBHOOK_BASE_URL},TELEGRAM_BOT_USERNAME=${_TELEGRAM_BOT_USERNAME},TELEGRAM_WEBHOOK_URL=${_TELEGRAM_WEBHOOK_URL},FRONTEND_URL=${_FRONTEND_URL}'
+      - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,FIRESTORE_DATABASE=mark-i,GEMINI_MODEL=gemini-3.6-flash,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1,WEBHOOK_BASE_URL=${_WEBHOOK_BASE_URL},TELEGRAM_BOT_USERNAME=${_TELEGRAM_BOT_USERNAME},TELEGRAM_WEBHOOK_URL=${_TELEGRAM_WEBHOOK_URL},FRONTEND_URL=${_FRONTEND_URL}'
       - '--set-secrets'
       - 'TELEGRAM_BOT_TOKEN=mark-i-telegram-bot-token:latest,TELEGRAM_WEBHOOK_SECRET=mark-i-telegram-webhook-secret:latest,GITHUB_CLIENT_ID=mark-i-github-client-id:latest,GITHUB_CLIENT_SECRET=mark-i-github-client-secret:latest,GITHUB_WEBHOOK_SECRET=mark-i-github-webhook-secret:latest,SCHEDULER_SHARED_SECRET=mark-i-scheduler-shared-secret:latest'
 
-  # Deploy the durable GitHub consumer with its own runtime role.
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - id: 'deploy-github-worker'
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
       - 'mark-i-github-worker'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/mark-i-backend:$COMMIT_SHA'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID'
       - '--region'
       - 'us-central1'
       - '--platform'
       - 'managed'
+      - '--service-account'
+      - 'mark-i-github-worker-runtime@$PROJECT_ID.iam.gserviceaccount.com'
       - '--no-allow-unauthenticated'
       - '--command'
       - 'uvicorn'
       - '--args'
       - 'app.worker_apps:github_app,--host,0.0.0.0,--port,8080'
       - '--set-env-vars'
-      - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,FIRESTORE_DATABASE=mark-i'
+      - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,FIRESTORE_DATABASE=mark-i,GEMINI_MODEL=gemini-3.6-flash,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1'
       - '--set-secrets'
       - 'TELEGRAM_BOT_TOKEN=mark-i-telegram-bot-token:latest'
 
-  # Deploy the opportunity consumer as a private Pub/Sub-push Cloud Run service.
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - id: 'deploy-opportunity-worker'
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
       - 'mark-i-opportunity-worker'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/mark-i-backend:$COMMIT_SHA'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID'
       - '--region'
       - 'us-central1'
       - '--platform'
       - 'managed'
+      - '--service-account'
+      - 'mark-i-opportunity-worker-runtime@$PROJECT_ID.iam.gserviceaccount.com'
       - '--no-allow-unauthenticated'
       - '--command'
       - 'uvicorn'
       - '--args'
       - 'app.worker_apps:opportunity_app,--host,0.0.0.0,--port,8080'
       - '--set-env-vars'
-      - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,FIRESTORE_DATABASE=mark-i'
+      - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,FIRESTORE_DATABASE=mark-i,GEMINI_MODEL=gemini-3.6-flash,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1'
       - '--set-secrets'
       - 'TELEGRAM_BOT_TOKEN=mark-i-telegram-bot-token:latest'
 
-  # Pub/Sub invokes the private worker services with a dedicated OIDC identity.
-  # The deploy trigger service account needs permission to configure these bindings.
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - id: 'configure-pubsub-push'
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
     args:
       - '-ceu'
       - |
+        if [[ '${_CONFIGURE_PUBSUB_PUSH}' != 'true' ]]; then
+          echo 'Authenticated Pub/Sub push remains disabled for the bootstrap deployment.'
+          exit 0
+        fi
+
+        github_url="$$(gcloud run services describe mark-i-github-worker --region=us-central1 --format='value(status.url)')"
+        opportunity_url="$$(gcloud run services describe mark-i-opportunity-worker --region=us-central1 --format='value(status.url)')"
+
         for service in mark-i-github-worker mark-i-opportunity-worker; do
           gcloud run services add-iam-policy-binding "$${service}" \
             --region=us-central1 \
-            --member="serviceAccount:${_PUBSUB_PUSH_SERVICE_ACCOUNT}" \
+            --member='serviceAccount:${_PUBSUB_PUSH_SERVICE_ACCOUNT}' \
             --role=roles/run.invoker
         done
+
         gcloud pubsub subscriptions modify-push-config github-events-sub \
-          --push-endpoint="$$(gcloud run services describe mark-i-github-worker --region=us-central1 --format='value(status.url)')" \
-          --push-auth-service-account="${_PUBSUB_PUSH_SERVICE_ACCOUNT}"
+          --push-endpoint="$${github_url}" \
+          --push-auth-service-account='${_PUBSUB_PUSH_SERVICE_ACCOUNT}' \
+          --push-auth-token-audience="$${github_url}"
         gcloud pubsub subscriptions modify-push-config opportunity-collect-sub \
-          --push-endpoint="$$(gcloud run services describe mark-i-opportunity-worker --region=us-central1 --format='value(status.url)')" \
-          --push-auth-service-account="${_PUBSUB_PUSH_SERVICE_ACCOUNT}"
+          --push-endpoint="$${opportunity_url}" \
+          --push-auth-service-account='${_PUBSUB_PUSH_SERVICE_ACCOUNT}' \
+          --push-auth-token-audience="$${opportunity_url}"
 
 images:
-  - 'gcr.io/$PROJECT_ID/mark-i-backend:$COMMIT_SHA'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

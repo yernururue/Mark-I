@@ -119,7 +119,8 @@ class TelegramService:
         try:
             response = await get_http_client().post(url, json=payload, timeout=10.0)
         except httpx.RequestError as exc:
-            logger.warning("Telegram delivery outcome is unknown: %s", exc)
+            # RequestError text can include the token-bearing Telegram URL.
+            logger.warning("Telegram delivery outcome is unknown: %s", type(exc).__name__)
             return TelegramSendResult(delivered=False, ambiguous=True, error="transport failure")
         except Exception:  # Defensive seam for an injected/non-httpx client.
             logger.exception("Telegram delivery outcome is unknown")

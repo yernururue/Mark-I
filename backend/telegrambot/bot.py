@@ -41,6 +41,8 @@ async def setup_webhook(settings: Settings):
             if response.status_code == 200:
                 logger.info("Telegram webhook set successfully.")
             else:
-                logger.error(f"Failed to set webhook: {response.text}")
-    except Exception as e:
-        logger.error(f"Error setting webhook: {e}")
+                logger.error("Failed to set Telegram webhook: HTTP %s", response.status_code)
+    except Exception as exc:
+        # httpx exception text can contain the request URL; Telegram embeds the
+        # bot token in that URL, so log only the failure class.
+        logger.error("Telegram webhook setup failed: %s", type(exc).__name__)
