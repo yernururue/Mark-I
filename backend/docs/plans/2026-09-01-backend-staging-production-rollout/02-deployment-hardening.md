@@ -12,6 +12,7 @@ Make the backend deployment deterministic and secret-safe before it touches GCP 
 - Wire all required substitutions and production frontend origin.
 - Preserve private worker ingress and authenticated push configuration.
 - Sanitize Telegram error logging so URLs, exception text, and response bodies cannot expose bot credentials.
+- Run `python scripts/validate_rollout_config.py` to verify the versioned deployment invariants without reading secret payloads.
 - Run focused and full backend tests without changing tests or xfails.
 
 ## Exit criteria
