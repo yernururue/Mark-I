@@ -31,6 +31,14 @@ from app.models.common import ErrorResponse, HealthResponse
 logger = logging.getLogger(__name__)
 
 
+def _cors_origins() -> list[str]:
+    origins = ["http://localhost:3000"]
+    frontend_origin = get_settings().FRONTEND_URL.rstrip("/")
+    if frontend_origin and frontend_origin not in origins:
+        origins.append(frontend_origin)
+    return origins
+
+
 def _error_response(status_code: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"error": {"code": code, "message": message}})
 
@@ -96,9 +104,7 @@ async def unexpected_error_handler(_: Request, exc: Exception) -> JSONResponse:
 # 2. Настройка CORS (Cross-Origin Resource Sharing)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",    # На всякий случай разрешаем стандартный локальный порт
-    ],
+    allow_origins=_cors_origins(),
     allow_credentials=True,         # Разрешает фронтенду присылать авторизационные токены
     allow_methods=["*"],            # Разрешает любые действия (GET, POST, PATCH)
     allow_headers=["*"],            # Разрешает любые заголовки в запросе
