@@ -16,6 +16,13 @@ substitutions:
   _CONFIGURE_PUBSUB_PUSH: 'false'
 
 steps:
+  - id: 'validate-rollout-config'
+    name: 'python:3.11-slim'
+    entrypoint: python
+    args:
+      - 'scripts/validate_rollout_config.py'
+    dir: 'backend'
+
   - id: 'build-image'
     name: 'gcr.io/cloud-builders/docker'
     args:
