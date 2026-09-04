@@ -11,11 +11,18 @@ from pathlib import Path
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 REQUIRED_SUBSTITUTIONS = {
+    "_IMAGE_TAG",
     "_WEBHOOK_BASE_URL",
     "_TELEGRAM_BOT_USERNAME",
     "_TELEGRAM_WEBHOOK_URL",
     "_FRONTEND_URL",
     "_PUBSUB_PUSH_SERVICE_ACCOUNT",
+    "_TELEGRAM_BOT_TOKEN_VERSION",
+    "_TELEGRAM_WEBHOOK_SECRET_VERSION",
+    "_GITHUB_CLIENT_ID_VERSION",
+    "_GITHUB_CLIENT_SECRET_VERSION",
+    "_GITHUB_WEBHOOK_SECRET_VERSION",
+    "_SCHEDULER_SHARED_SECRET_VERSION",
 }
 
 REQUIRED_SECRETS = {
@@ -51,8 +58,9 @@ def validate_cloudbuild(failures: list[str]) -> None:
             failures.append(f"cloudbuild runtime identity missing: {identity}")
 
     required_fragments = {
-        "regional Artifact Registry image": "us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID",
+        "regional Artifact Registry image": "us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:${_IMAGE_TAG}",
         "Cloud Logging-only build output": "logging: CLOUD_LOGGING_ONLY",
+        "manual-build dynamic substitutions": "dynamicSubstitutions: true",
         "bootstrap push safety gate": "_CONFIGURE_PUBSUB_PUSH: 'false'",
         "Vertex AI runtime mode": "GOOGLE_GENAI_USE_VERTEXAI=true",
         "production frontend origin": "FRONTEND_URL=${_FRONTEND_URL}",
@@ -63,6 +71,8 @@ def validate_cloudbuild(failures: list[str]) -> None:
 
     if "gcr.io/$PROJECT_ID/mark-i-backend:" in source:
         failures.append("legacy Container Registry image target is still present")
+    if ":latest" in source:
+        failures.append("Cloud Run secret bindings must use explicit versions, not latest")
 
 
 def validate_firestore_indexes(failures: list[str]) -> int:
