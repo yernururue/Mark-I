@@ -62,6 +62,7 @@ def validate_cloudbuild(failures: list[str]) -> None:
         "Cloud Logging-only build output": "logging: CLOUD_LOGGING_ONLY",
         "manual-build dynamic substitutions": "dynamicSubstitutions: true",
         "in-build rollout preflight": "id: 'validate-rollout-config'",
+        "post-deploy service verification": "id: 'verify-bootstrap-services'",
         "bootstrap push safety gate": "_CONFIGURE_PUBSUB_PUSH: 'false'",
         "Vertex AI runtime mode": "GOOGLE_GENAI_USE_VERTEXAI=true",
         "production frontend origin": "FRONTEND_URL=${_FRONTEND_URL}",
@@ -74,6 +75,12 @@ def validate_cloudbuild(failures: list[str]) -> None:
     build_position = source.find("id: 'build-image'")
     if preflight_position < 0 or build_position < 0 or preflight_position > build_position:
         failures.append("rollout preflight must run before the container build")
+
+    last_deploy_position = source.find("id: 'deploy-opportunity-worker'")
+    verification_position = source.find("id: 'verify-bootstrap-services'")
+    push_position = source.find("id: 'configure-pubsub-push'")
+    if not last_deploy_position < verification_position < push_position:
+        failures.append("service verification must run after deploys and before Pub/Sub push changes")
 
     if "gcr.io/$PROJECT_ID/mark-i-backend:" in source:
         failures.append("legacy Container Registry image target is still present")

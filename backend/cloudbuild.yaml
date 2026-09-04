@@ -145,6 +145,45 @@ steps:
       - '--set-secrets'
       - 'TELEGRAM_BOT_TOKEN=mark-i-telegram-bot-token:${_TELEGRAM_BOT_TOKEN_VERSION}'
 
+  - id: 'verify-bootstrap-services'
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-ceu'
+      - |
+        verify_service() {
+          local service="$$1"
+          local access="$$2"
+          local ready
+          local url
+          local token
+
+          ready="$$(gcloud run services describe "$${service}" \
+            --region=us-central1 \
+            --format='value(status.conditions[?type=Ready].status)')"
+          if [[ "$${ready}" != 'True' ]]; then
+            echo "Cloud Run readiness gate failed for $${service}." >&2
+            exit 1
+          fi
+
+          url="$$(gcloud run services describe "$${service}" \
+            --region=us-central1 \
+            --format='value(status.url)')"
+          if [[ "$${access}" == 'private' ]]; then
+            token="$$(gcloud auth print-identity-token --audiences="$${url}")"
+            curl --fail --silent --show-error \
+              --header="Authorization: Bearer $${token}" \
+              "$${url}/health" >/dev/null
+          else
+            curl --fail --silent --show-error "$${url}/health" >/dev/null
+          fi
+          echo "Cloud Run readiness gate passed for $${service} ($${access})."
+        }
+
+        verify_service mark-i-api public
+        verify_service mark-i-github-worker private
+        verify_service mark-i-opportunity-worker private
+
   - id: 'configure-pubsub-push'
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
