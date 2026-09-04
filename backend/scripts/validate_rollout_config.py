@@ -11,11 +11,18 @@ from pathlib import Path
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 REQUIRED_SUBSTITUTIONS = {
+    "_IMAGE_TAG",
     "_WEBHOOK_BASE_URL",
     "_TELEGRAM_BOT_USERNAME",
     "_TELEGRAM_WEBHOOK_URL",
     "_FRONTEND_URL",
     "_PUBSUB_PUSH_SERVICE_ACCOUNT",
+    "_TELEGRAM_BOT_TOKEN_VERSION",
+    "_TELEGRAM_WEBHOOK_SECRET_VERSION",
+    "_GITHUB_CLIENT_ID_VERSION",
+    "_GITHUB_CLIENT_SECRET_VERSION",
+    "_GITHUB_WEBHOOK_SECRET_VERSION",
+    "_SCHEDULER_SHARED_SECRET_VERSION",
 }
 
 REQUIRED_SECRETS = {
@@ -51,8 +58,11 @@ def validate_cloudbuild(failures: list[str]) -> None:
             failures.append(f"cloudbuild runtime identity missing: {identity}")
 
     required_fragments = {
-        "regional Artifact Registry image": "us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID",
+        "regional Artifact Registry image": "us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:${_IMAGE_TAG}",
         "Cloud Logging-only build output": "logging: CLOUD_LOGGING_ONLY",
+        "manual-build dynamic substitutions": "dynamicSubstitutions: true",
+        "in-build rollout preflight": "id: 'validate-rollout-config'",
+        "post-deploy service verification": "id: 'verify-bootstrap-services'",
         "bootstrap push safety gate": "_CONFIGURE_PUBSUB_PUSH: 'false'",
         "Vertex AI runtime mode": "GOOGLE_GENAI_USE_VERTEXAI=true",
         "production frontend origin": "FRONTEND_URL=${_FRONTEND_URL}",
@@ -61,8 +71,35 @@ def validate_cloudbuild(failures: list[str]) -> None:
         if fragment not in source:
             failures.append(f"cloudbuild invariant missing: {description}")
 
+    preflight_position = source.find("id: 'validate-rollout-config'")
+    build_position = source.find("id: 'build-image'")
+    if preflight_position < 0 or build_position < 0 or preflight_position > build_position:
+        failures.append("rollout preflight must run before the container build")
+
+    last_deploy_position = source.find("id: 'deploy-opportunity-worker'")
+    verification_position = source.find("id: 'verify-bootstrap-services'")
+    push_position = source.find("id: 'configure-pubsub-push'")
+    if not last_deploy_position < verification_position < push_position:
+        failures.append("service verification must run after deploys and before Pub/Sub push changes")
+
     if "gcr.io/$PROJECT_ID/mark-i-backend:" in source:
         failures.append("legacy Container Registry image target is still present")
+    if ":latest" in source:
+        failures.append("Cloud Run secret bindings must use explicit versions, not latest")
+
+    runtime_limits = {
+        "CPU": ("      - '--cpu'\n      - '1'", 3),
+        "memory": ("      - '--memory'\n      - '512Mi'", 3),
+        "request timeout": ("      - '--timeout'\n      - '300s'", 3),
+        "concurrency": ("      - '--concurrency'\n      - '80'", 3),
+        "minimum instances": ("      - '--min'\n      - '0'", 3),
+        "maximum instances": ("      - '--max'\n      - '5'", 3),
+    }
+    for description, (fragment, expected_count) in runtime_limits.items():
+        if source.count(fragment) != expected_count:
+            failures.append(
+                f"Cloud Run {description} limit must be explicit on all {expected_count} services"
+            )
 
 
 def validate_firestore_indexes(failures: list[str]) -> int:

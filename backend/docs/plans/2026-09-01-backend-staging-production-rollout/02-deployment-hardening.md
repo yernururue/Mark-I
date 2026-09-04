@@ -19,3 +19,7 @@ Make the backend deployment deterministic and secret-safe before it touches GCP 
 
 - Cloud Build configuration is internally complete and inspectable.
 - Backend tests pass and `frontend/` remains untouched.
+
+## Checkpoint
+
+Repository-side hardening and the locked Python 3.11 suite passed on 2026-09-04. See [the sanitized checkpoint report](../../reports/2026-09-04-backend-rollout-hardening-checkpoint.md). Live GCP inspection and deployment remain behind the plan's explicit confirmation gates.

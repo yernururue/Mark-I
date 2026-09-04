@@ -1,20 +1,34 @@
 substitutions:
+  _IMAGE_TAG: '$BUILD_ID'
   _WEBHOOK_BASE_URL: 'https://mark-i-api-691051892786.us-central1.run.app'
   _TELEGRAM_BOT_USERNAME: 'mark1_dev_bot'
   _TELEGRAM_WEBHOOK_URL: 'https://mark-i-api-691051892786.us-central1.run.app/api/v1/webhooks/telegram'
   _FRONTEND_URL: 'https://mark-i-506218.web.app'
   _PUBSUB_PUSH_SERVICE_ACCOUNT: 'mark-i-pubsub-push@mark-i-506218.iam.gserviceaccount.com'
+  _TELEGRAM_BOT_TOKEN_VERSION: '1'
+  _TELEGRAM_WEBHOOK_SECRET_VERSION: '1'
+  _GITHUB_CLIENT_ID_VERSION: '1'
+  _GITHUB_CLIENT_SECRET_VERSION: '1'
+  _GITHUB_WEBHOOK_SECRET_VERSION: '1'
+  _SCHEDULER_SHARED_SECRET_VERSION: '1'
   # Bootstrap deploys leave existing pull subscriptions unchanged. Authenticated
   # push is enabled only after the healthy-revision gate and explicit approval.
   _CONFIGURE_PUBSUB_PUSH: 'false'
 
 steps:
+  - id: 'validate-rollout-config'
+    name: 'python:3.11-slim'
+    entrypoint: python
+    args:
+      - 'scripts/validate_rollout_config.py'
+    dir: 'backend'
+
   - id: 'build-image'
     name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:${_IMAGE_TAG}'
       - '.'
     dir: 'backend'
 
@@ -22,7 +36,7 @@ steps:
     name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:${_IMAGE_TAG}'
 
   - id: 'deploy-api'
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -32,18 +46,30 @@ steps:
       - 'deploy'
       - 'mark-i-api'
       - '--image'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:${_IMAGE_TAG}'
       - '--region'
       - 'us-central1'
       - '--platform'
       - 'managed'
+      - '--cpu'
+      - '1'
+      - '--memory'
+      - '512Mi'
+      - '--timeout'
+      - '300s'
+      - '--concurrency'
+      - '80'
+      - '--min'
+      - '0'
+      - '--max'
+      - '5'
       - '--service-account'
       - 'mark-i-api-runtime@$PROJECT_ID.iam.gserviceaccount.com'
       - '--allow-unauthenticated'
       - '--set-env-vars'
       - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,FIRESTORE_DATABASE=mark-i,GEMINI_MODEL=gemini-3.6-flash,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1,WEBHOOK_BASE_URL=${_WEBHOOK_BASE_URL},TELEGRAM_BOT_USERNAME=${_TELEGRAM_BOT_USERNAME},TELEGRAM_WEBHOOK_URL=${_TELEGRAM_WEBHOOK_URL},FRONTEND_URL=${_FRONTEND_URL}'
       - '--set-secrets'
-      - 'TELEGRAM_BOT_TOKEN=mark-i-telegram-bot-token:latest,TELEGRAM_WEBHOOK_SECRET=mark-i-telegram-webhook-secret:latest,GITHUB_CLIENT_ID=mark-i-github-client-id:latest,GITHUB_CLIENT_SECRET=mark-i-github-client-secret:latest,GITHUB_WEBHOOK_SECRET=mark-i-github-webhook-secret:latest,SCHEDULER_SHARED_SECRET=mark-i-scheduler-shared-secret:latest'
+      - 'TELEGRAM_BOT_TOKEN=mark-i-telegram-bot-token:${_TELEGRAM_BOT_TOKEN_VERSION},TELEGRAM_WEBHOOK_SECRET=mark-i-telegram-webhook-secret:${_TELEGRAM_WEBHOOK_SECRET_VERSION},GITHUB_CLIENT_ID=mark-i-github-client-id:${_GITHUB_CLIENT_ID_VERSION},GITHUB_CLIENT_SECRET=mark-i-github-client-secret:${_GITHUB_CLIENT_SECRET_VERSION},GITHUB_WEBHOOK_SECRET=mark-i-github-webhook-secret:${_GITHUB_WEBHOOK_SECRET_VERSION},SCHEDULER_SHARED_SECRET=mark-i-scheduler-shared-secret:${_SCHEDULER_SHARED_SECRET_VERSION}'
 
   - id: 'deploy-github-worker'
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -53,11 +79,23 @@ steps:
       - 'deploy'
       - 'mark-i-github-worker'
       - '--image'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:${_IMAGE_TAG}'
       - '--region'
       - 'us-central1'
       - '--platform'
       - 'managed'
+      - '--cpu'
+      - '1'
+      - '--memory'
+      - '512Mi'
+      - '--timeout'
+      - '300s'
+      - '--concurrency'
+      - '80'
+      - '--min'
+      - '0'
+      - '--max'
+      - '5'
       - '--service-account'
       - 'mark-i-github-worker-runtime@$PROJECT_ID.iam.gserviceaccount.com'
       - '--no-allow-unauthenticated'
@@ -68,7 +106,7 @@ steps:
       - '--set-env-vars'
       - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,FIRESTORE_DATABASE=mark-i,GEMINI_MODEL=gemini-3.6-flash,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1'
       - '--set-secrets'
-      - 'TELEGRAM_BOT_TOKEN=mark-i-telegram-bot-token:latest'
+      - 'TELEGRAM_BOT_TOKEN=mark-i-telegram-bot-token:${_TELEGRAM_BOT_TOKEN_VERSION}'
 
   - id: 'deploy-opportunity-worker'
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -78,11 +116,23 @@ steps:
       - 'deploy'
       - 'mark-i-opportunity-worker'
       - '--image'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:${_IMAGE_TAG}'
       - '--region'
       - 'us-central1'
       - '--platform'
       - 'managed'
+      - '--cpu'
+      - '1'
+      - '--memory'
+      - '512Mi'
+      - '--timeout'
+      - '300s'
+      - '--concurrency'
+      - '80'
+      - '--min'
+      - '0'
+      - '--max'
+      - '5'
       - '--service-account'
       - 'mark-i-opportunity-worker-runtime@$PROJECT_ID.iam.gserviceaccount.com'
       - '--no-allow-unauthenticated'
@@ -93,7 +143,46 @@ steps:
       - '--set-env-vars'
       - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,FIRESTORE_DATABASE=mark-i,GEMINI_MODEL=gemini-3.6-flash,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1'
       - '--set-secrets'
-      - 'TELEGRAM_BOT_TOKEN=mark-i-telegram-bot-token:latest'
+      - 'TELEGRAM_BOT_TOKEN=mark-i-telegram-bot-token:${_TELEGRAM_BOT_TOKEN_VERSION}'
+
+  - id: 'verify-bootstrap-services'
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-ceu'
+      - |
+        verify_service() {
+          local service="$$1"
+          local access="$$2"
+          local ready
+          local url
+          local token
+
+          ready="$$(gcloud run services describe "$${service}" \
+            --region=us-central1 \
+            --format='value(status.conditions[?type=Ready].status)')"
+          if [[ "$${ready}" != 'True' ]]; then
+            echo "Cloud Run readiness gate failed for $${service}." >&2
+            exit 1
+          fi
+
+          url="$$(gcloud run services describe "$${service}" \
+            --region=us-central1 \
+            --format='value(status.url)')"
+          if [[ "$${access}" == 'private' ]]; then
+            token="$$(gcloud auth print-identity-token --audiences="$${url}")"
+            curl --fail --silent --show-error \
+              --header="Authorization: Bearer $${token}" \
+              "$${url}/health" >/dev/null
+          else
+            curl --fail --silent --show-error "$${url}/health" >/dev/null
+          fi
+          echo "Cloud Run readiness gate passed for $${service} ($${access})."
+        }
+
+        verify_service mark-i-api public
+        verify_service mark-i-github-worker private
+        verify_service mark-i-opportunity-worker private
 
   - id: 'configure-pubsub-push'
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -126,7 +215,8 @@ steps:
           --push-auth-token-audience="$${opportunity_url}"
 
 images:
-  - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:$BUILD_ID'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/mark-i-backend/mark-i-backend:${_IMAGE_TAG}'
 
 options:
+  dynamicSubstitutions: true
   logging: CLOUD_LOGGING_ONLY
