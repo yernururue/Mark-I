@@ -74,6 +74,20 @@ def validate_cloudbuild(failures: list[str]) -> None:
     if ":latest" in source:
         failures.append("Cloud Run secret bindings must use explicit versions, not latest")
 
+    runtime_limits = {
+        "CPU": ("      - '--cpu'\n      - '1'", 3),
+        "memory": ("      - '--memory'\n      - '512Mi'", 3),
+        "request timeout": ("      - '--timeout'\n      - '300s'", 3),
+        "concurrency": ("      - '--concurrency'\n      - '80'", 3),
+        "minimum instances": ("      - '--min'\n      - '0'", 3),
+        "maximum instances": ("      - '--max'\n      - '5'", 3),
+    }
+    for description, (fragment, expected_count) in runtime_limits.items():
+        if source.count(fragment) != expected_count:
+            failures.append(
+                f"Cloud Run {description} limit must be explicit on all {expected_count} services"
+            )
+
 
 def validate_firestore_indexes(failures: list[str]) -> int:
     document = json.loads(BACKEND_ROOT.joinpath("firestore.indexes.json").read_text(encoding="utf-8"))
