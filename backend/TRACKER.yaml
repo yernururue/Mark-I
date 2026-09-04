@@ -1,6 +1,6 @@
 ## ============================================================
 ## Mark-I Backend Tracker
-## Последнее обновление: 2026-08-30
+## Последнее обновление: 2026-09-04
 ## ============================================================
 
 ## --- ИНФРАСТРУКТУРА (День 0) ---
@@ -371,6 +371,57 @@ plans:
           - api-errors-and-profile
           - firestore-dashboard-and-migration
           - chat-opportunities-and-deployment
+
+  - name: backend-staging-production-rollout
+    path: docs/plans/2026-09-01-backend-staging-production-rollout/
+    status: in-progress
+    created: 2026-09-01
+    started: 2026-09-01
+    shipped:
+    tasks:
+      - name: initialization-and-baseline
+        file: 01-initialization-and-baseline.md
+        status: in-progress
+        description: "Record the immutable repository and live GCP baseline without mutation"
+        depends_on: backend-correctness-hardening
+
+      - name: deployment-hardening
+        file: 02-deployment-hardening.md
+        status: done
+        description: "Pin rollout inputs, bound Cloud Run resources, and gate build/deploy health"
+        depends_on: initialization-and-baseline
+
+      - name: gcp-foundation-and-secrets
+        file: 03-gcp-foundation-and-secrets.md
+        status: pending
+        description: "Create dedicated identities, least-privilege IAM, secrets, registry, and indexes"
+        depends_on: initialization-and-baseline
+
+      - name: bootstrap-deployment
+        file: 04-bootstrap-deployment.md
+        status: pending
+        description: "Build and deploy three healthy Cloud Run services with recurring traffic disabled"
+        depends_on:
+          - deployment-hardening
+          - gcp-foundation-and-secrets
+
+      - name: staging-e2e
+        file: 05-staging-e2e.md
+        status: pending
+        description: "Prove authenticated push, API, GitHub, Telegram, opportunity, and idempotency flows"
+        depends_on: bootstrap-deployment
+
+      - name: production-promotion
+        file: 06-production-promotion.md
+        status: pending
+        description: "Remove enumerated synthetic state and activate the authenticated daily scheduler"
+        depends_on: staging-e2e
+
+      - name: acceptance-and-shipping
+        file: 07-acceptance-and-shipping.md
+        status: pending
+        description: "Publish sanitized evidence, ship system documentation, and synchronize final status"
+        depends_on: production-promotion
 
 ## --- ЧТО СДЕЛАНО В ЭТОМ ЧАТЕ ---
 

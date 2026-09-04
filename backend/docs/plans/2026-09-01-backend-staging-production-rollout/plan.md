@@ -5,7 +5,7 @@
 > **GCP project:** `mark-i-506218`  
 > **Primary region:** `us-central1`  
 > **Firestore database:** `mark-i` (`europe-west1`)  
-> **Safety rule:** trackers are updated only after the complete rollout succeeds
+> **Safety rule:** trackers reflect active work, but are promoted to `shipped` only after the complete rollout succeeds
 
 ## Goal
 
