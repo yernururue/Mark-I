@@ -1,6 +1,6 @@
 ## ============================================================
 ## Mark-I Backend Tracker
-## Последнее обновление: 2026-09-04
+## Последнее обновление: 2026-09-06
 ## ============================================================
 
 ## --- ИНФРАСТРУКТУРА (День 0) ---
@@ -387,7 +387,7 @@ plans:
 
       - name: deployment-hardening
         file: 02-deployment-hardening.md
-        status: done
+        status: in-progress
         description: "Pin rollout inputs, bound Cloud Run resources, and gate build/deploy health"
         depends_on: initialization-and-baseline
 
