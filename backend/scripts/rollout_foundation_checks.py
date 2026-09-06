@@ -1,0 +1,128 @@
+"""Pure, payload-free checks of Firestore and Secret Manager metadata."""
+
+from __future__ import annotations
+
+import json
+import re
+from typing import Any
+
+
+def _index_signature(index: dict[str, Any], *, ignore_name: bool) -> tuple:
+    collection = index.get("collectionGroup")
+    resource_name = index.get("name", "")
+    if resource_name:
+        match = re.fullmatch(r"projects/[^/]+/databases/[^/]+/collectionGroups/([^/]+)/indexes/[^/]+", resource_name)
+        if not match or (collection and collection != match[1]):
+            raise ValueError("invalid index resource name")
+        collection = match[1]
+    scope = index.get("queryScope")
+    if not isinstance(collection, str) or not collection or scope not in ("COLLECTION", "COLLECTION_GROUP"):
+        raise ValueError("index must declare a collection group and query scope")
+    fields = index.get("fields")
+    if not isinstance(fields, list) or not fields:
+        raise ValueError("index must declare ordered fields")
+    signature = []
+    for field in fields:
+        if not isinstance(field, dict) or not isinstance(field.get("fieldPath"), str) or not field["fieldPath"]:
+            raise ValueError("invalid index field")
+        modes = [mode for mode in ("order", "arrayConfig", "vectorConfig") if mode in field]
+        if len(modes) != 1:
+            raise ValueError("index field must have exactly one indexing mode")
+        mode = modes[0]
+        value = field[mode]
+        if mode == "order" and value not in ("ASCENDING", "DESCENDING"):
+            raise ValueError("invalid field order")
+        if mode == "arrayConfig" and value != "CONTAINS":
+            raise ValueError("invalid array indexing mode")
+        if mode == "vectorConfig" and not isinstance(value, dict):
+            raise ValueError("invalid vector indexing mode")
+        if ignore_name and field["fieldPath"] == "__name__":
+            continue
+        signature.append((field["fieldPath"], mode, json.dumps(value, sort_keys=True)))
+    if not signature:
+        raise ValueError("index has no declared fields")
+    return collection, scope, tuple(signature)
+
+
+def evaluate_indexes(expected: list[dict], live: list[dict]) -> list[dict]:
+    """Report each declared index, matching scope and ordered field semantics.
+
+    Firestore adds an implicit document-name field to live metadata. Ignore it
+    only when the declaration does not explicitly set its order. Unrelated
+    READY indexes never satisfy a declaration, and malformed live records do
+    not count as matches.
+    """
+    if not isinstance(expected, list) or not expected:
+        raise ValueError("expected indexes must be a nonempty list")
+    if not isinstance(live, list):
+        raise ValueError("live indexes must be a list")
+    results = []
+    for declaration in expected:
+        if not isinstance(declaration, dict):
+            raise ValueError("invalid index declaration")
+        signature = _index_signature(declaration, ignore_name=False)
+        ignore_name = not any(field[0] == "__name__" for field in signature[2])
+        states = set()
+        for index in live:
+            if not isinstance(index, dict):
+                continue
+            try:
+                matches = _index_signature(index, ignore_name=ignore_name) == signature
+            except (ValueError, TypeError):
+                continue
+            if matches:
+                state = index.get("state")
+                states.add(state if state in ("READY", "CREATING", "NEEDS_REPAIR", "ERROR") else "UNKNOWN")
+        state = next((state for state in ("READY", "NEEDS_REPAIR", "ERROR", "CREATING", "UNKNOWN") if state in states), "MISSING")
+        results.append({
+            "collectionGroup": signature[0],
+            "queryScope": signature[1],
+            "fields": declaration["fields"],
+            "state": state,
+        })
+    return results
+
+
+def _version_id(name: Any) -> str | None:
+    if not isinstance(name, str):
+        return None
+    match = re.fullmatch(r"(?:projects/[^/]+/secrets/[^/]+/versions/)?([1-9][0-9]*|latest)", name)
+    return match[1] if match else None
+
+
+def evaluate_secret_versions(versions: list[dict], required_version: str | None = None) -> dict:
+    """Check enabled metadata without accessing secret payloads.
+
+    With no pin, any enabled version is sufficient for foundation readiness.
+    A numeric pin must itself be enabled. ``latest`` resolves to the largest
+    version number, even if that version is disabled or destroyed.
+    """
+    if not isinstance(versions, list):
+        raise ValueError("secret versions must be a list")
+    required = _version_id(required_version) if required_version is not None else None
+    if required_version is not None and required is None:
+        raise ValueError("required secret version must be numeric or latest")
+    states: dict[str, str] = {}
+    for version in versions:
+        if not isinstance(version, dict):
+            continue
+        number = _version_id(version.get("name"))
+        if number is None or number == "latest":
+            continue
+        state = version.get("state")
+        state = state if state in ("ENABLED", "DISABLED", "DESTROYED") else "UNKNOWN"
+        if number in states and states[number] != state:
+            state = "UNKNOWN"
+        states[number] = state
+    enabled = sorted((number for number, state in states.items() if state == "ENABLED"), key=int)
+    if required == "latest":
+        selected = max(states, key=int) if states else None
+    elif required is not None:
+        selected = required
+    else:
+        selected = enabled[-1] if enabled else (max(states, key=int) if states else None)
+    return {
+        "state": states.get(selected, "MISSING"),
+        "version": selected,
+        "enabled_versions": enabled,
+    }
