@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +42,61 @@ REQUIRED_RUNTIME_IDENTITIES = {
     "mark-i-github-worker-runtime@$PROJECT_ID.iam.gserviceaccount.com",
     "mark-i-opportunity-worker-runtime@$PROJECT_ID.iam.gserviceaccount.com",
 }
+
+
+def _https_origin(value: str) -> bool:
+    """Accept an HTTPS origin that can safely enter gcloud's env-var list."""
+    if not value or any(character.isspace() or character in ",\\" for character in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        return (
+            parsed.scheme == "https"
+            and bool(parsed.hostname)
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.port in (None, 443)
+            and parsed.path == ""
+            and not parsed.query
+            and not parsed.fragment
+        )
+    except ValueError:
+        return False
+
+
+def validate_effective_inputs(values: dict[str, str], failures: list[str]) -> None:
+    """Validate resolved build inputs; report names only, never supplied values."""
+    expected = REQUIRED_SUBSTITUTIONS | {"_CONFIGURE_PUBSUB_PUSH", "PROJECT_ID"}
+    for key in sorted(expected):
+        if not values.get(key):
+            failures.append(f"effective build input missing: {key}")
+
+    if values.get("PROJECT_ID") != "mark-i-506218":
+        failures.append("effective PROJECT_ID must match the fixed rollout project")
+
+    tag = values.get("_IMAGE_TAG", "")
+    if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}", tag) or tag.lower() == "latest":
+        failures.append("effective _IMAGE_TAG must be an explicit release tag")
+
+    for key in sorted(REQUIRED_SUBSTITUTIONS):
+        if key.endswith("_VERSION") and not re.fullmatch(r"[1-9][0-9]*", values.get(key, "")):
+            failures.append(f"effective {key} must be a positive numeric secret version")
+
+    for key in ("_WEBHOOK_BASE_URL", "_FRONTEND_URL"):
+        if not _https_origin(values.get(key, "")):
+            failures.append(f"effective {key} must be an HTTPS origin without a trailing slash")
+
+    if values.get("_TELEGRAM_WEBHOOK_URL") != values.get("_WEBHOOK_BASE_URL", "") + "/api/v1/webhooks/telegram":
+        failures.append("effective _TELEGRAM_WEBHOOK_URL must use the API origin and Telegram webhook path")
+
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{4,31}", values.get("_TELEGRAM_BOT_USERNAME", "")):
+        failures.append("effective _TELEGRAM_BOT_USERNAME is invalid")
+
+    if values.get("_PUBSUB_PUSH_SERVICE_ACCOUNT") != "mark-i-pubsub-push@mark-i-506218.iam.gserviceaccount.com":
+        failures.append("effective _PUBSUB_PUSH_SERVICE_ACCOUNT must match the dedicated rollout identity")
+
+    if values.get("_CONFIGURE_PUBSUB_PUSH") not in {"true", "false"}:
+        failures.append("effective _CONFIGURE_PUBSUB_PUSH must be true or false")
 
 
 def validate_cloudbuild(failures: list[str]) -> None:
@@ -130,10 +188,21 @@ def validate_runtime(failures: list[str]) -> None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--require-effective-inputs",
+        action="store_true",
+        help="also validate resolved Cloud Build inputs from ROLLOUT_<input> environment variables",
+    )
+    options = parser.parse_args()
     failures: list[str] = []
     validate_cloudbuild(failures)
     index_count = validate_firestore_indexes(failures)
     validate_runtime(failures)
+    if options.require_effective_inputs:
+        keys = REQUIRED_SUBSTITUTIONS | {"_CONFIGURE_PUBSUB_PUSH", "PROJECT_ID"}
+        values = {key: os.environ.get(f"ROLLOUT_{key.lstrip('_')}", "") for key in keys}
+        validate_effective_inputs(values, failures)
 
     if failures:
         for failure in failures:
