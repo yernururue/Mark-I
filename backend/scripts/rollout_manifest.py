@@ -51,6 +51,19 @@ REQUIRED_APIS = (
     "serviceusage.googleapis.com",
 )
 
+_API_IDENTITY = f"serviceAccount:mark-i-api-runtime@{PROJECT_ID}.iam.gserviceaccount.com"
+_GITHUB_IDENTITY = f"serviceAccount:mark-i-github-worker-runtime@{PROJECT_ID}.iam.gserviceaccount.com"
+_OPPORTUNITY_IDENTITY = f"serviceAccount:mark-i-opportunity-worker-runtime@{PROJECT_ID}.iam.gserviceaccount.com"
+
+SECRET_ACCESSORS = {
+    "mark-i-telegram-bot-token": (_API_IDENTITY, _GITHUB_IDENTITY, _OPPORTUNITY_IDENTITY),
+    "mark-i-telegram-webhook-secret": (_API_IDENTITY,),
+    "mark-i-github-client-id": (_API_IDENTITY,),
+    "mark-i-github-client-secret": (_API_IDENTITY,),
+    "mark-i-github-webhook-secret": (_API_IDENTITY,),
+    "mark-i-scheduler-shared-secret": (_API_IDENTITY,),
+}
+
 
 def service_account_email(account: str) -> str:
     """Return the fixed-project email for a declared service account."""

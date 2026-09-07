@@ -10,6 +10,7 @@ from scripts.rollout_foundation_checks import (
     evaluate_indexes,
     evaluate_project_metadata,
     evaluate_protected_file,
+    evaluate_role_bindings,
     evaluate_secret_versions,
 )
 
@@ -153,6 +154,33 @@ class ProjectFoundationTests(unittest.TestCase):
         live.append({"config": {"name": "pubsub.googleapis.com"}})
         self.assertEqual(evaluate_enabled_apis(live, required), {"state": "READY", "missing": []})
         self.assertEqual(evaluate_enabled_apis({}, required)["state"], "INVALID")
+
+
+class IamPolicyTests(unittest.TestCase):
+    def test_exact_required_role_members_are_ready(self):
+        required = ("serviceAccount:api@example.com",)
+        policy = {"bindings": [{"role": "roles/secretmanager.secretAccessor", "members": list(required)}]}
+        self.assertEqual(
+            evaluate_role_bindings(policy, role="roles/secretmanager.secretAccessor", required_members=required),
+            {"state": "READY", "missing": [], "unexpected": [], "conditional": False},
+        )
+
+    def test_missing_unexpected_and_conditional_members_fail_closed(self):
+        required = ("serviceAccount:api@example.com",)
+        cases = (
+            ({"bindings": []}, [required[0]], [], False),
+            ({"bindings": [{"role": "roles/secretmanager.secretAccessor", "members": [*required, "user:other@example.com"]}]}, [], ["user:other@example.com"], False),
+            ({"bindings": [{"role": "roles/secretmanager.secretAccessor", "members": list(required), "condition": {"expression": "true"}}]}, [required[0]], [], True),
+        )
+        for policy, missing, unexpected, conditional in cases:
+            with self.subTest(policy=policy):
+                result = evaluate_role_bindings(policy, role="roles/secretmanager.secretAccessor", required_members=required)
+                self.assertEqual(result["state"], "MISMATCH")
+                self.assertEqual((result["missing"], result["unexpected"], result["conditional"]), (missing, unexpected, conditional))
+
+    def test_malformed_policy_is_invalid(self):
+        result = evaluate_role_bindings([], role="roles/run.invoker", required_members=("serviceAccount:test",))
+        self.assertEqual(result["state"], "INVALID")
 
 
 if __name__ == "__main__":

@@ -36,6 +36,36 @@ def evaluate_enabled_apis(metadata: Any, required: tuple[str, ...]) -> dict[str,
     return {"state": "READY" if not missing else "MISSING", "missing": missing}
 
 
+def evaluate_role_bindings(
+    policy: Any,
+    *,
+    role: str,
+    required_members: tuple[str, ...],
+    allowed_members: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Fail closed on missing or unexpected unconditional IAM members."""
+    allowed = set(required_members if allowed_members is None else allowed_members)
+    required = set(required_members)
+    if not isinstance(policy, dict) or not isinstance(policy.get("bindings", []), list):
+        return {"state": "INVALID", "missing": sorted(required), "unexpected": []}
+    members: set[str] = set()
+    conditional = False
+    for binding in policy.get("bindings", []):
+        if not isinstance(binding, dict) or binding.get("role") != role:
+            continue
+        values = binding.get("members")
+        if not isinstance(values, list) or not all(isinstance(member, str) for member in values):
+            return {"state": "INVALID", "missing": sorted(required), "unexpected": []}
+        if binding.get("condition") is not None:
+            conditional = True
+            continue
+        members.update(values)
+    missing = sorted(required - members)
+    unexpected = sorted(members - allowed)
+    state = "READY" if not missing and not unexpected and not conditional else "MISMATCH"
+    return {"state": state, "missing": missing, "unexpected": unexpected, "conditional": conditional}
+
+
 def evaluate_protected_file(path: str | Path | None) -> dict[str, Any]:
     """Check credential-file metadata without opening or naming the file."""
     if path is None or not str(path):

@@ -17,6 +17,7 @@ try:
         evaluate_indexes,
         evaluate_project_metadata,
         evaluate_protected_file,
+        evaluate_role_bindings,
         evaluate_secret_versions,
     )
     from scripts.rollout_manifest import (
@@ -27,6 +28,7 @@ try:
         REQUIRED_APIS,
         REGION,
         SCHEDULER_JOB,
+        SECRET_ACCESSORS,
         SECRETS,
         SERVICE_ACCOUNTS,
         SERVICES,
@@ -40,6 +42,7 @@ except ModuleNotFoundError:
         evaluate_indexes,
         evaluate_project_metadata,
         evaluate_protected_file,
+        evaluate_role_bindings,
         evaluate_secret_versions,
     )
     from rollout_manifest import (
@@ -50,6 +53,7 @@ except ModuleNotFoundError:
         REQUIRED_APIS,
         REGION,
         SCHEDULER_JOB,
+        SECRET_ACCESSORS,
         SECRETS,
         SERVICE_ACCOUNTS,
         SERVICES,
@@ -332,6 +336,20 @@ def main(argv: list[str] | None = None) -> int:
             record(name, "invalid-metadata", required=True)
             continue
         record(name, "ok" if version["state"] == "ENABLED" else "not-ready", required=True, value=version)
+
+        policy_state, policy = _metadata_object(
+            _run(("secrets", "get-iam-policy", secret, "--format=json"))
+        )
+        policy_name = f"secret-iam/{secret}"
+        if policy_state != "ok":
+            record(policy_name, policy_state, required=True)
+            continue
+        access = evaluate_role_bindings(
+            policy,
+            role="roles/secretmanager.secretAccessor",
+            required_members=SECRET_ACCESSORS[secret],
+        )
+        record(policy_name, "ok" if access["state"] == "READY" else "not-ready", required=True, value=access)
 
     indexes = _run(
         (

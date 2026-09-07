@@ -58,6 +58,7 @@ def simulated_inventory(monkeypatch):
         lambda: [inventory.Check("foundation-resource", ("artifacts", "repositories", "describe"), True)],
     )
     monkeypatch.setattr(inventory, "SECRETS", ())
+    monkeypatch.setattr(inventory, "SECRET_ACCESSORS", {})
     monkeypatch.setattr(inventory, "evaluate_indexes", lambda expected, live: [{"state": "READY"}])
     monkeypatch.setattr(inventory, "evaluate_project_metadata", lambda metadata, **kwargs: {"state": "READY"})
     monkeypatch.setattr(inventory, "evaluate_enabled_apis", lambda metadata, required: {"state": "READY", "missing": []})
