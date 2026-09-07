@@ -4,7 +4,275 @@ from __future__ import annotations
 
 import json
 import re
+import stat
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
+
+
+def evaluate_project_metadata(metadata: Any, *, project_id: str, project_number: str) -> dict[str, Any]:
+    """Verify that gcloud resolved the immutable rollout project."""
+    if not isinstance(metadata, dict):
+        return {"state": "INVALID"}
+    actual_id = metadata.get("projectId")
+    actual_number = str(metadata.get("projectNumber", ""))
+    lifecycle = metadata.get("lifecycleState")
+    if actual_id != project_id or actual_number != project_number:
+        return {"state": "MISMATCH"}
+    if lifecycle != "ACTIVE":
+        return {"state": "INACTIVE", "lifecycle": lifecycle if isinstance(lifecycle, str) else "UNKNOWN"}
+    return {"state": "READY", "project_id": actual_id, "project_number": actual_number}
+
+
+def evaluate_enabled_apis(metadata: Any, required: tuple[str, ...]) -> dict[str, Any]:
+    """Compare enabled API names with the fixed rollout requirement set."""
+    if not isinstance(metadata, list) or not all(isinstance(item, dict) for item in metadata):
+        return {"state": "INVALID", "missing": list(required)}
+    enabled = {
+        item.get("config", {}).get("name")
+        for item in metadata
+        if isinstance(item.get("config"), dict)
+    }
+    missing = sorted(set(required) - enabled)
+    return {"state": "READY" if not missing else "MISSING", "missing": missing}
+
+
+def evaluate_role_bindings(
+    policy: Any,
+    *,
+    role: str,
+    required_members: tuple[str, ...],
+    allowed_members: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Fail closed on missing or unexpected unconditional IAM members."""
+    allowed = set(required_members if allowed_members is None else allowed_members)
+    required = set(required_members)
+    if not isinstance(policy, dict) or not isinstance(policy.get("bindings", []), list):
+        return {"state": "INVALID", "missing": sorted(required), "unexpected": []}
+    members: set[str] = set()
+    conditional = False
+    for binding in policy.get("bindings", []):
+        if not isinstance(binding, dict) or binding.get("role") != role:
+            continue
+        values = binding.get("members")
+        if not isinstance(values, list) or not all(isinstance(member, str) for member in values):
+            return {"state": "INVALID", "missing": sorted(required), "unexpected": []}
+        if binding.get("condition") is not None:
+            conditional = True
+            continue
+        members.update(values)
+    missing = sorted(required - members)
+    unexpected = sorted(members - allowed)
+    state = "READY" if not missing and not unexpected and not conditional else "MISMATCH"
+    return {"state": state, "missing": missing, "unexpected": unexpected, "conditional": conditional}
+
+
+def evaluate_service_account(metadata: Any, *, expected_email: str) -> dict[str, Any]:
+    """Require the exact enabled service-account identity."""
+    if not isinstance(metadata, dict):
+        return {"state": "INVALID"}
+    email = metadata.get("email")
+    name = metadata.get("name")
+    expected_name = f"projects/-/serviceAccounts/{expected_email}"
+    if email != expected_email or name != expected_name:
+        return {"state": "MISMATCH"}
+    if metadata.get("disabled") is True:
+        return {"state": "DISABLED", "email": email}
+    if metadata.get("disabled") not in (False, None):
+        return {"state": "INVALID"}
+    return {"state": "READY", "email": email}
+
+
+def evaluate_artifact_repository(
+    metadata: Any,
+    *,
+    project_id: str,
+    region: str,
+    repository: str,
+) -> dict[str, Any]:
+    """Require the fixed regional standard Docker repository."""
+    if not isinstance(metadata, dict):
+        return {"state": "INVALID"}
+    expected_name = f"projects/{project_id}/locations/{region}/repositories/{repository}"
+    fields = {
+        "name": metadata.get("name"),
+        "format": metadata.get("format"),
+        "mode": metadata.get("mode", "STANDARD_REPOSITORY"),
+    }
+    if fields != {"name": expected_name, "format": "DOCKER", "mode": "STANDARD_REPOSITORY"}:
+        return {"state": "MISMATCH"}
+    return {"state": "READY", **fields}
+
+
+def evaluate_pubsub_topic(metadata: Any, *, project_id: str, topic: str) -> dict[str, Any]:
+    """Require a topic in the fixed rollout project."""
+    if not isinstance(metadata, dict):
+        return {"state": "INVALID"}
+    if metadata.get("name") != f"projects/{project_id}/topics/{topic}":
+        return {"state": "MISMATCH"}
+    return {"state": "READY", "topic": topic}
+
+
+def evaluate_pubsub_subscription(
+    metadata: Any,
+    *,
+    project_id: str,
+    topic: str,
+    subscription: str,
+    expected_mode: str,
+    push_service_account: str,
+) -> dict[str, Any]:
+    """Verify topic attribution and pull/authenticated-push rollout mode."""
+    if expected_mode not in {"pull", "push"} or not isinstance(metadata, dict):
+        return {"state": "INVALID"}
+    expected_name = f"projects/{project_id}/subscriptions/{subscription}"
+    expected_topic = f"projects/{project_id}/topics/{topic}"
+    deadline = metadata.get("ackDeadlineSeconds")
+    if metadata.get("name") != expected_name or metadata.get("topic") != expected_topic:
+        return {"state": "MISMATCH"}
+    if type(deadline) is not int or not 10 <= deadline <= 600:
+        return {"state": "MISMATCH"}
+    push = metadata.get("pushConfig")
+    if expected_mode == "pull":
+        if push not in (None, {}):
+            return {"state": "MISMATCH"}
+    else:
+        if not isinstance(push, dict):
+            return {"state": "MISMATCH"}
+        endpoint = push.get("pushEndpoint")
+        token = push.get("oidcToken")
+        try:
+            parsed = urlsplit(endpoint)
+            canonical_endpoint = (
+                parsed.scheme == "https"
+                and parsed.hostname is not None
+                and parsed.hostname.endswith(".run.app")
+                and parsed.path in ("", "/")
+                and not parsed.query
+                and not parsed.fragment
+            )
+        except (TypeError, ValueError):
+            canonical_endpoint = False
+        if (
+            not canonical_endpoint
+            or not isinstance(token, dict)
+            or token.get("serviceAccountEmail") != push_service_account
+            or token.get("audience") != endpoint
+        ):
+            return {"state": "MISMATCH"}
+    return {"state": "READY", "mode": expected_mode, "ack_deadline_seconds": deadline}
+
+
+def evaluate_cloud_run_service(
+    metadata: Any,
+    *,
+    service: str,
+    service_account: str,
+    image_prefix: str,
+) -> dict[str, Any]:
+    """Verify immutable deployment identity, image and ready-revision traffic."""
+    if not isinstance(metadata, dict):
+        return {"state": "INVALID"}
+    meta = metadata.get("metadata")
+    spec = metadata.get("spec")
+    status = metadata.get("status")
+    if not all(isinstance(value, dict) for value in (meta, spec, status)):
+        return {"state": "INVALID"}
+    template = spec.get("template")
+    template_spec = template.get("spec") if isinstance(template, dict) else None
+    containers = template_spec.get("containers") if isinstance(template_spec, dict) else None
+    if (
+        meta.get("name") != service
+        or not isinstance(template_spec, dict)
+        or template_spec.get("serviceAccountName") != service_account
+        or not isinstance(containers, list)
+        or len(containers) != 1
+        or not isinstance(containers[0], dict)
+    ):
+        return {"state": "MISMATCH"}
+    image = containers[0].get("image")
+    if not isinstance(image, str) or not image.startswith(image_prefix) or image.endswith(":latest"):
+        return {"state": "MISMATCH"}
+    conditions = status.get("conditions")
+    ready = [item for item in conditions or [] if isinstance(item, dict) and item.get("type") == "Ready"]
+    latest = status.get("latestReadyRevisionName")
+    if len(ready) != 1 or ready[0].get("status") != "True" or not latest:
+        return {"state": "NOT_READY"}
+    if status.get("latestCreatedRevisionName") != latest:
+        return {"state": "NOT_READY"}
+    traffic = status.get("traffic")
+    if not isinstance(traffic, list) or not traffic:
+        return {"state": "NOT_READY"}
+    total = 0
+    for target in traffic:
+        if not isinstance(target, dict):
+            return {"state": "INVALID"}
+        percent = target.get("percent", 0)
+        if type(percent) is not int or not 0 <= percent <= 100:
+            return {"state": "INVALID"}
+        if percent and target.get("revisionName") != latest:
+            return {"state": "NOT_READY"}
+        total += percent
+    if total != 100:
+        return {"state": "NOT_READY"}
+    return {"state": "READY", "service": service, "revision": latest}
+
+
+def evaluate_cloud_run_access(
+    policy: Any,
+    *,
+    public: bool,
+    required_push_member: str | None = None,
+) -> dict[str, Any]:
+    """Verify API public access and fail closed on public worker access."""
+    if not isinstance(policy, dict) or not isinstance(policy.get("bindings", []), list):
+        return {"state": "INVALID"}
+    invokers: set[str] = set()
+    conditional = False
+    for binding in policy.get("bindings", []):
+        if not isinstance(binding, dict) or binding.get("role") != "roles/run.invoker":
+            continue
+        members = binding.get("members")
+        if not isinstance(members, list) or not all(isinstance(member, str) for member in members):
+            return {"state": "INVALID"}
+        conditional = conditional or binding.get("condition") is not None
+        if binding.get("condition") is None:
+            invokers.update(members)
+    public_members = sorted(invokers & {"allUsers", "allAuthenticatedUsers"})
+    missing = []
+    if public and "allUsers" not in invokers:
+        missing.append("allUsers")
+    if required_push_member and required_push_member not in invokers:
+        missing.append(required_push_member)
+    unexpected_public = [] if public else public_members
+    state = "READY" if not missing and not unexpected_public and not conditional else "MISMATCH"
+    return {
+        "state": state,
+        "public": "allUsers" in invokers,
+        "missing": sorted(missing),
+        "unexpected_public": unexpected_public,
+        "conditional": conditional,
+    }
+
+
+def evaluate_protected_file(path: str | Path | None) -> dict[str, Any]:
+    """Check credential-file metadata without opening or naming the file."""
+    if path is None or not str(path):
+        return {"state": "UNSET"}
+    candidate = Path(path)
+    try:
+        metadata = candidate.lstat()
+    except (OSError, ValueError, TypeError):
+        return {"state": "MISSING"}
+    if stat.S_ISLNK(metadata.st_mode):
+        return {"state": "SYMLINK"}
+    if not stat.S_ISREG(metadata.st_mode):
+        return {"state": "NOT_REGULAR"}
+    mode = stat.S_IMODE(metadata.st_mode)
+    return {
+        "state": "READY" if mode == 0o600 else "INSECURE_MODE",
+        "mode": f"{mode:04o}",
+    }
 
 
 def _index_signature(index: dict[str, Any], *, ignore_name: bool) -> tuple:

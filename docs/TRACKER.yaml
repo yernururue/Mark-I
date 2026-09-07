@@ -5,7 +5,7 @@ areas:
   backend:
     status: in-progress
     current_plan: backend-staging-production-rollout
-    notes: "Backend implementation and correctness hardening are shipped. Controlled staging/production rollout is active; repository hardening passed on 2026-09-04, while live GCP baseline, infrastructure gates, deploy and E2E remain."
+    notes: "Backend implementation and correctness hardening are shipped. Rollout deployment-hardening passed the locked Python 3.11 gate on 2026-09-07; live GCP baseline is blocked by the missing gcloud CLI, while foundation mutation, deploy and E2E remain gated."
 
   frontend:
     status: in-progress

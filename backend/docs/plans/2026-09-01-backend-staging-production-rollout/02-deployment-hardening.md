@@ -23,3 +23,5 @@ Make the backend deployment deterministic and secret-safe before it touches GCP 
 ## Checkpoint
 
 Repository-side hardening and the locked Python 3.11 suite passed on 2026-09-04. See [the sanitized checkpoint report](../../reports/2026-09-04-backend-rollout-hardening-checkpoint.md). Live GCP inspection and deployment remain behind the plan's explicit confirmation gates.
+
+The gate was extended and completed on 2026-09-07 with strict metadata, IAM, Pub/Sub, Cloud Run, and approval-document checks. See [the completion checkpoint](../../reports/2026-09-07-backend-rollout-local-gates.md).

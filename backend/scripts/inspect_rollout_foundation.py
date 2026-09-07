@@ -12,32 +12,75 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:
-    from scripts.rollout_foundation_checks import evaluate_indexes, evaluate_secret_versions
+    from scripts.rollout_foundation_checks import (
+        evaluate_artifact_repository,
+        evaluate_cloud_run_access,
+        evaluate_cloud_run_service,
+        evaluate_enabled_apis,
+        evaluate_indexes,
+        evaluate_project_metadata,
+        evaluate_protected_file,
+        evaluate_pubsub_subscription,
+        evaluate_pubsub_topic,
+        evaluate_role_bindings,
+        evaluate_service_account,
+        evaluate_secret_versions,
+    )
+    from scripts.rollout_manifest import (
+        ARTIFACT_REPOSITORY,
+        DATABASE,
+        PROJECT_ID,
+        PROJECT_NUMBER,
+        PUBSUB_PUSH_SERVICE_ACCOUNT,
+        PUBSUB_TOPOLOGY,
+        REQUIRED_APIS,
+        REGION,
+        SCHEDULER_JOB,
+        SECRET_ACCESSORS,
+        SECRETS,
+        SERVICE_ACCOUNTS,
+        SERVICES,
+        SUBSCRIPTIONS,
+        TOPICS,
+        service_account_email,
+    )
 except ModuleNotFoundError:
-    from rollout_foundation_checks import evaluate_indexes, evaluate_secret_versions
+    from rollout_foundation_checks import (
+        evaluate_artifact_repository,
+        evaluate_cloud_run_access,
+        evaluate_cloud_run_service,
+        evaluate_enabled_apis,
+        evaluate_indexes,
+        evaluate_project_metadata,
+        evaluate_protected_file,
+        evaluate_pubsub_subscription,
+        evaluate_pubsub_topic,
+        evaluate_role_bindings,
+        evaluate_service_account,
+        evaluate_secret_versions,
+    )
+    from rollout_manifest import (
+        ARTIFACT_REPOSITORY,
+        DATABASE,
+        PROJECT_ID,
+        PROJECT_NUMBER,
+        PUBSUB_PUSH_SERVICE_ACCOUNT,
+        PUBSUB_TOPOLOGY,
+        REQUIRED_APIS,
+        REGION,
+        SCHEDULER_JOB,
+        SECRET_ACCESSORS,
+        SECRETS,
+        SERVICE_ACCOUNTS,
+        SERVICES,
+        SUBSCRIPTIONS,
+        TOPICS,
+        service_account_email,
+    )
 
 
-PROJECT_ID = "mark-i-506218"
-REGION = "us-central1"
-DATABASE = "mark-i"
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 COMMAND_TIMEOUT_SECONDS = 30
-
-RUNTIME_SERVICE_ACCOUNTS = (
-    "mark-i-api-runtime",
-    "mark-i-github-worker-runtime",
-    "mark-i-opportunity-worker-runtime",
-    "mark-i-pubsub-push",
-    "mark-i-cloud-build",
-)
-SECRETS = (
-    "mark-i-telegram-bot-token",
-    "mark-i-telegram-webhook-secret",
-    "mark-i-github-client-id",
-    "mark-i-github-client-secret",
-    "mark-i-github-webhook-secret",
-    "mark-i-scheduler-shared-secret",
-)
 
 
 @dataclass(frozen=True)
@@ -48,51 +91,7 @@ class Check:
 
 
 def _checks() -> list[Check]:
-    checks = [
-        Check("project", ("projects", "describe", PROJECT_ID, "--format=value(projectId)"), True),
-        Check(
-            "artifact-registry/mark-i-backend",
-            (
-                "artifacts",
-                "repositories",
-                "describe",
-                "mark-i-backend",
-                f"--location={REGION}",
-                "--format=value(name)",
-            ),
-            True,
-        ),
-        Check("pubsub/topic/github-events", ("pubsub", "topics", "describe", "github-events", "--format=value(name)"), True),
-        Check(
-            "pubsub/topic/opportunity-collect",
-            ("pubsub", "topics", "describe", "opportunity-collect", "--format=value(name)"),
-            True,
-        ),
-        Check(
-            "pubsub/subscription/github-events-sub",
-            ("pubsub", "subscriptions", "describe", "github-events-sub", "--format=value(name)"),
-            True,
-        ),
-        Check(
-            "pubsub/subscription/opportunity-collect-sub",
-            ("pubsub", "subscriptions", "describe", "opportunity-collect-sub", "--format=value(name)"),
-            True,
-        ),
-    ]
-    checks.extend(
-        Check(
-            f"service-account/{account}",
-            (
-                "iam",
-                "service-accounts",
-                "describe",
-                f"{account}@{PROJECT_ID}.iam.gserviceaccount.com",
-                "--format=value(email)",
-            ),
-            True,
-        )
-        for account in RUNTIME_SERVICE_ACCOUNTS
-    )
+    checks = []
     checks.extend(
         Check(
             f"secret/{secret}",
@@ -101,20 +100,6 @@ def _checks() -> list[Check]:
         )
         for secret in SECRETS
     )
-    checks.extend(
-        Check(
-            f"cloud-run/{service}",
-            (
-                "run",
-                "services",
-                "describe",
-                service,
-                f"--region={REGION}",
-                "--format=value(status.conditions[?type=Ready].status)",
-            ),
-        )
-        for service in ("mark-i-api", "mark-i-github-worker", "mark-i-opportunity-worker")
-    )
     checks.append(
         Check(
             "scheduler/opportunity-trigger",
@@ -122,7 +107,7 @@ def _checks() -> list[Check]:
                 "scheduler",
                 "jobs",
                 "describe",
-                "opportunity-trigger",
+                SCHEDULER_JOB,
                 f"--location={REGION}",
                 "--format=value(state)",
             ),
@@ -179,6 +164,19 @@ def _metadata_list(result: subprocess.CompletedProcess[str]) -> tuple[str, list[
     return "ok", metadata
 
 
+def _metadata_object(result: subprocess.CompletedProcess[str]) -> tuple[str, dict]:
+    state = _result_state(result)
+    if state != "ok":
+        return state, {}
+    try:
+        metadata = json.loads(result.stdout)
+    except (ValueError, TypeError):
+        return "invalid-metadata", {}
+    if not isinstance(metadata, dict):
+        return "invalid-metadata", {}
+    return "ok", metadata
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -186,7 +184,23 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="fail if any Stage 2 foundation resource or READY Firestore index is missing",
     )
+    parser.add_argument(
+        "--strict-bootstrap",
+        action="store_true",
+        help="also require all three deployed services to be on healthy latest revisions",
+    )
+    parser.add_argument(
+        "--expect-pubsub-mode",
+        choices=("pull", "push"),
+        default="pull",
+        help="expected subscription mode for the current rollout gate",
+    )
     parser.add_argument("--json", action="store_true", help="emit one sanitized JSON evidence document")
+    parser.add_argument(
+        "--github-credential-file",
+        type=Path,
+        help="inspect metadata for the protected GitHub credential input without reading it",
+    )
     options = parser.parse_args(argv)
 
     report = {
@@ -197,6 +211,9 @@ def main(argv: list[str] | None = None) -> int:
         "foundation_gaps": [],
         "inspection_errors": [],
     }
+
+    credential = evaluate_protected_file(options.github_credential_file)
+    credential_ready = credential["state"] == "READY"
 
     def record(name: str, state: str, *, required: bool = False, value=None) -> None:
         entry = {"name": name, "state": state}
@@ -211,7 +228,8 @@ def main(argv: list[str] | None = None) -> int:
     def finish() -> int:
         failures = len(report["inspection_errors"])
         gaps = len(report["foundation_gaps"])
-        code = 2 if failures else 1 if options.strict_foundation and gaps else 0
+        strict = options.strict_foundation or options.strict_bootstrap
+        code = 2 if failures else 1 if strict and gaps else 0
         report["status"] = "error" if failures else "incomplete" if gaps else "ok"
         if options.json:
             print(json.dumps(report, sort_keys=True))
@@ -227,6 +245,12 @@ def main(argv: list[str] | None = None) -> int:
         return code
 
     if shutil.which("gcloud") is None:
+        record(
+            "local/github-credential-file",
+            "ok" if credential_ready else "not-ready",
+            required=options.strict_foundation,
+            value=credential,
+        )
         record("gcloud-cli", "command-error")
         return finish()
 
@@ -237,6 +261,164 @@ def main(argv: list[str] | None = None) -> int:
         record("active-account", "auth-error" if account_state == "empty" else account_state)
         return finish()
     report["active_account"] = account
+
+    record(
+        "local/github-credential-file",
+        "ok" if credential_ready else "not-ready",
+        required=options.strict_foundation,
+        value=credential,
+    )
+
+    state, project_metadata = _metadata_object(
+        _run(("projects", "describe", PROJECT_ID, "--format=json(projectId,projectNumber,lifecycleState)"))
+    )
+    if state != "ok":
+        record("project/identity", state, required=True)
+    else:
+        project = evaluate_project_metadata(project_metadata, project_id=PROJECT_ID, project_number=PROJECT_NUMBER)
+        record("project/identity", "ok" if project["state"] == "READY" else "not-ready", required=True, value=project)
+
+    state, enabled_apis = _metadata_list(
+        _run(("services", "list", "--enabled", "--format=json(config.name)"))
+    )
+    if state != "ok":
+        record("project/required-apis", state, required=True)
+    else:
+        apis = evaluate_enabled_apis(enabled_apis, REQUIRED_APIS)
+        record("project/required-apis", "ok" if apis["state"] == "READY" else "not-ready", required=True, value=apis)
+
+    state, repository_metadata = _metadata_object(
+        _run(
+            (
+                "artifacts",
+                "repositories",
+                "describe",
+                ARTIFACT_REPOSITORY,
+                f"--location={REGION}",
+                "--format=json(name,format,mode)",
+            )
+        )
+    )
+    if state != "ok":
+        record(f"artifact-registry/{ARTIFACT_REPOSITORY}", state, required=True)
+    else:
+        repository = evaluate_artifact_repository(
+            repository_metadata,
+            project_id=PROJECT_ID,
+            region=REGION,
+            repository=ARTIFACT_REPOSITORY,
+        )
+        record(
+            f"artifact-registry/{ARTIFACT_REPOSITORY}",
+            "ok" if repository["state"] == "READY" else "not-ready",
+            required=True,
+            value=repository,
+        )
+
+    for account in SERVICE_ACCOUNTS:
+        email = service_account_email(account)
+        state, account_metadata = _metadata_object(
+            _run(("iam", "service-accounts", "describe", email, "--format=json(name,email,disabled)"))
+        )
+        name = f"service-account/{account}"
+        if state != "ok":
+            record(name, state, required=True)
+            continue
+        identity = evaluate_service_account(account_metadata, expected_email=email)
+        record(name, "ok" if identity["state"] == "READY" else "not-ready", required=True, value=identity)
+
+    push_email = service_account_email(PUBSUB_PUSH_SERVICE_ACCOUNT)
+    for topic, subscription in PUBSUB_TOPOLOGY:
+        state, topic_metadata = _metadata_object(
+            _run(("pubsub", "topics", "describe", topic, "--format=json(name)"))
+        )
+        topic_name = f"pubsub/topic/{topic}"
+        if state != "ok":
+            record(topic_name, state, required=True)
+        else:
+            topic_result = evaluate_pubsub_topic(topic_metadata, project_id=PROJECT_ID, topic=topic)
+            record(topic_name, "ok" if topic_result["state"] == "READY" else "not-ready", required=True, value=topic_result)
+
+        state, subscription_metadata = _metadata_object(
+            _run(
+                (
+                    "pubsub",
+                    "subscriptions",
+                    "describe",
+                    subscription,
+                    "--format=json(name,topic,ackDeadlineSeconds,pushConfig)",
+                )
+            )
+        )
+        subscription_name = f"pubsub/subscription/{subscription}"
+        if state != "ok":
+            record(subscription_name, state, required=True)
+        else:
+            subscription_result = evaluate_pubsub_subscription(
+                subscription_metadata,
+                project_id=PROJECT_ID,
+                topic=topic,
+                subscription=subscription,
+                expected_mode=options.expect_pubsub_mode,
+                push_service_account=push_email,
+            )
+            record(
+                subscription_name,
+                "ok" if subscription_result["state"] == "READY" else "not-ready",
+                required=True,
+                value=subscription_result,
+            )
+
+    image_prefix = f"{REGION}-docker.pkg.dev/{PROJECT_ID}/{ARTIFACT_REPOSITORY}/mark-i-backend:"
+    push_member = f"serviceAccount:{push_email}"
+    for service, account, private in SERVICES:
+        state, service_metadata = _metadata_object(
+            _run(
+                (
+                    "run",
+                    "services",
+                    "describe",
+                    service,
+                    f"--region={REGION}",
+                    "--format=json(metadata.name,spec.template.spec.serviceAccountName,spec.template.spec.containers,status.conditions,status.latestCreatedRevisionName,status.latestReadyRevisionName,status.traffic)",
+                )
+            )
+        )
+        name = f"cloud-run/{service}"
+        if state != "ok":
+            record(name, state, required=options.strict_bootstrap)
+            continue
+        service_result = evaluate_cloud_run_service(
+            service_metadata,
+            service=service,
+            service_account=service_account_email(account),
+            image_prefix=image_prefix,
+        )
+        record(
+            name,
+            "ok" if service_result["state"] == "READY" else "not-ready",
+            required=options.strict_bootstrap,
+            value=service_result,
+        )
+
+        policy_state, policy = _metadata_object(
+            _run(("run", "services", "get-iam-policy", service, f"--region={REGION}", "--format=json"))
+        )
+        policy_name = f"cloud-run-iam/{service}"
+        if policy_state != "ok":
+            record(policy_name, policy_state, required=options.strict_bootstrap)
+            continue
+        access = evaluate_cloud_run_access(
+            policy,
+            public=not private,
+            required_push_member=push_member if private and options.expect_pubsub_mode == "push" else None,
+        )
+        record(
+            policy_name,
+            "ok" if access["state"] == "READY" else "not-ready",
+            required=options.strict_bootstrap,
+            value=access,
+        )
 
     for check in _checks():
         result = _run(check.args)
@@ -262,6 +444,20 @@ def main(argv: list[str] | None = None) -> int:
             record(name, "invalid-metadata", required=True)
             continue
         record(name, "ok" if version["state"] == "ENABLED" else "not-ready", required=True, value=version)
+
+        policy_state, policy = _metadata_object(
+            _run(("secrets", "get-iam-policy", secret, "--format=json"))
+        )
+        policy_name = f"secret-iam/{secret}"
+        if policy_state != "ok":
+            record(policy_name, policy_state, required=True)
+            continue
+        access = evaluate_role_bindings(
+            policy,
+            role="roles/secretmanager.secretAccessor",
+            required_members=SECRET_ACCESSORS[secret],
+        )
+        record(policy_name, "ok" if access["state"] == "READY" else "not-ready", required=True, value=access)
 
     indexes = _run(
         (

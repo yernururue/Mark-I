@@ -17,3 +17,11 @@ Create the minimum identities, permissions, registry, secrets, and indexes neede
 
 - Required resources exist, indexes are ready, and IAM inspection shows no unintended principals.
 - Secret payloads have never appeared in console output, files, or logs.
+
+## Approval evidence
+
+Render the exact non-mutating IAM and resource target list before requesting confirmation:
+
+```text
+python3.11 scripts/render_rollout_approval.py foundation
+```

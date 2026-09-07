@@ -52,17 +52,39 @@ def test_rejects_invalid_metadata(metadata):
 @pytest.fixture
 def simulated_inventory(monkeypatch):
     monkeypatch.setattr(inventory.shutil, "which", lambda command: "/fake/gcloud")
-    monkeypatch.setattr(inventory, "_checks", lambda: [inventory.Check("project", ("projects", "describe"), True)])
+    monkeypatch.setattr(
+        inventory,
+        "_checks",
+        lambda: [inventory.Check("foundation-resource", ("pubsub", "topics", "describe"), True)],
+    )
     monkeypatch.setattr(inventory, "SECRETS", ())
+    monkeypatch.setattr(inventory, "SECRET_ACCESSORS", {})
     monkeypatch.setattr(inventory, "evaluate_indexes", lambda expected, live: [{"state": "READY"}])
+    monkeypatch.setattr(inventory, "evaluate_project_metadata", lambda metadata, **kwargs: {"state": "READY"})
+    monkeypatch.setattr(inventory, "evaluate_enabled_apis", lambda metadata, required: {"state": "READY", "missing": []})
+    monkeypatch.setattr(inventory, "SERVICE_ACCOUNTS", ())
+    monkeypatch.setattr(inventory, "SERVICES", ())
+    monkeypatch.setattr(inventory, "PUBSUB_TOPOLOGY", ())
+    monkeypatch.setattr(inventory, "evaluate_artifact_repository", lambda metadata, **kwargs: {"state": "READY"})
 
-    def configure(*, project_code=0, project_error="", account="builder@example.com", index_code=0):
+    def configure(*, resource_code=0, resource_error="", account="builder@example.com", index_code=0):
         def run(args):
             if args[0] == "auth":
                 return subprocess.CompletedProcess(args, 0, account, "")
+            if args[0] == "projects":
+                return subprocess.CompletedProcess(args, 0, "{}", "")
+            if args[0] == "services":
+                return subprocess.CompletedProcess(args, 0, "[]", "")
+            if args[0] == "artifacts":
+                return subprocess.CompletedProcess(args, 0, "{}", "")
             if args[0] == "firestore":
                 return subprocess.CompletedProcess(args, index_code, "[]", "PERMISSION_DENIED secret-diagnostic")
-            return subprocess.CompletedProcess(args, project_code, inventory.PROJECT_ID if not project_code else "", project_error)
+            return subprocess.CompletedProcess(
+                args,
+                resource_code,
+                inventory.PROJECT_ID if not resource_code else "",
+                resource_error,
+            )
 
         monkeypatch.setattr(inventory, "_run", run)
 
@@ -70,19 +92,19 @@ def simulated_inventory(monkeypatch):
 
 
 def test_inventory_reports_permission_error_and_never_prints_diagnostic(simulated_inventory, capsys):
-    simulated_inventory(project_code=1, project_error="PERMISSION_DENIED secret-diagnostic")
+    simulated_inventory(resource_code=1, resource_error="PERMISSION_DENIED secret-diagnostic")
     assert inventory.main(["--json"]) == 2
     output = capsys.readouterr().out
     assert "secret-diagnostic" not in output
     report = json.loads(output)
     assert report["status"] == "error"
-    assert report["inspection_errors"] == ["project"]
-    assert report["foundation_gaps"] == ["project"]
+    assert report["inspection_errors"] == ["foundation-resource"]
+    assert report["foundation_gaps"] == ["foundation-resource"]
 
 
 @pytest.mark.parametrize(("strict", "expected_code"), [(False, 0), (True, 1)])
 def test_missing_resource_remains_distinct_from_inspection_failure(simulated_inventory, capsys, strict, expected_code):
-    simulated_inventory(project_code=1, project_error="NOT_FOUND: missing")
+    simulated_inventory(resource_code=1, resource_error="NOT_FOUND: missing")
     assert inventory.main(["--json", *(["--strict-foundation"] if strict else [])]) == expected_code
     report = json.loads(capsys.readouterr().out)
     assert report["status"] == "incomplete"
@@ -105,8 +127,33 @@ def test_no_active_account_stops_inventory(simulated_inventory, capsys):
 
 def test_json_output_is_one_complete_document(simulated_inventory, capsys):
     simulated_inventory()
-    assert inventory.main(["--strict-foundation", "--json"]) == 0
+    assert inventory.main(["--json"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["status"] == "ok"
     assert report["scope"]["project"] == inventory.PROJECT_ID
     assert report["schema_version"] == 1
+
+
+def test_strict_inventory_requires_protected_github_credential_file(simulated_inventory, capsys):
+    simulated_inventory()
+    assert inventory.main(["--strict-foundation", "--json"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert "local/github-credential-file" in report["foundation_gaps"]
+    assert report["checks"][0]["value"] == {"state": "UNSET"}
+
+
+def test_inventory_reports_only_credential_metadata(simulated_inventory, capsys, tmp_path):
+    credential = tmp_path / "sensitive-name"
+    credential.write_text("super-secret-value", encoding="utf-8")
+    credential.chmod(0o600)
+    simulated_inventory()
+    assert inventory.main(["--strict-foundation", "--json", "--github-credential-file", str(credential)]) == 0
+    output = capsys.readouterr().out
+    assert str(credential) not in output
+    assert "super-secret-value" not in output
+    report = json.loads(output)
+    assert report["checks"][0] == {
+        "name": "local/github-credential-file",
+        "state": "ok",
+        "value": {"mode": "0600", "state": "READY"},
+    }
