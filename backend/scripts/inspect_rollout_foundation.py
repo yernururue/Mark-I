@@ -12,11 +12,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:
-    from scripts.rollout_foundation_checks import evaluate_indexes, evaluate_protected_file, evaluate_secret_versions
+    from scripts.rollout_foundation_checks import (
+        evaluate_enabled_apis,
+        evaluate_indexes,
+        evaluate_project_metadata,
+        evaluate_protected_file,
+        evaluate_secret_versions,
+    )
     from scripts.rollout_manifest import (
         ARTIFACT_REPOSITORY,
         DATABASE,
         PROJECT_ID,
+        PROJECT_NUMBER,
+        REQUIRED_APIS,
         REGION,
         SCHEDULER_JOB,
         SECRETS,
@@ -27,11 +35,19 @@ try:
         service_account_email,
     )
 except ModuleNotFoundError:
-    from rollout_foundation_checks import evaluate_indexes, evaluate_protected_file, evaluate_secret_versions
+    from rollout_foundation_checks import (
+        evaluate_enabled_apis,
+        evaluate_indexes,
+        evaluate_project_metadata,
+        evaluate_protected_file,
+        evaluate_secret_versions,
+    )
     from rollout_manifest import (
         ARTIFACT_REPOSITORY,
         DATABASE,
         PROJECT_ID,
+        PROJECT_NUMBER,
+        REQUIRED_APIS,
         REGION,
         SCHEDULER_JOB,
         SECRETS,
@@ -56,7 +72,6 @@ class Check:
 
 def _checks() -> list[Check]:
     checks = [
-        Check("project", ("projects", "describe", PROJECT_ID, "--format=value(projectId)"), True),
         Check(
             "artifact-registry/mark-i-backend",
             (
@@ -182,6 +197,19 @@ def _metadata_list(result: subprocess.CompletedProcess[str]) -> tuple[str, list[
     return "ok", metadata
 
 
+def _metadata_object(result: subprocess.CompletedProcess[str]) -> tuple[str, dict]:
+    state = _result_state(result)
+    if state != "ok":
+        return state, {}
+    try:
+        metadata = json.loads(result.stdout)
+    except (ValueError, TypeError):
+        return "invalid-metadata", {}
+    if not isinstance(metadata, dict):
+        return "invalid-metadata", {}
+    return "ok", metadata
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -261,6 +289,24 @@ def main(argv: list[str] | None = None) -> int:
         required=options.strict_foundation,
         value=credential,
     )
+
+    state, project_metadata = _metadata_object(
+        _run(("projects", "describe", PROJECT_ID, "--format=json(projectId,projectNumber,lifecycleState)"))
+    )
+    if state != "ok":
+        record("project/identity", state, required=True)
+    else:
+        project = evaluate_project_metadata(project_metadata, project_id=PROJECT_ID, project_number=PROJECT_NUMBER)
+        record("project/identity", "ok" if project["state"] == "READY" else "not-ready", required=True, value=project)
+
+    state, enabled_apis = _metadata_list(
+        _run(("services", "list", "--enabled", "--format=json(config.name)"))
+    )
+    if state != "ok":
+        record("project/required-apis", state, required=True)
+    else:
+        apis = evaluate_enabled_apis(enabled_apis, REQUIRED_APIS)
+        record("project/required-apis", "ok" if apis["state"] == "READY" else "not-ready", required=True, value=apis)
 
     for check in _checks():
         result = _run(check.args)

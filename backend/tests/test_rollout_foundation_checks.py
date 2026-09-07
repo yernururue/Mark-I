@@ -5,7 +5,13 @@ import json
 from pathlib import Path
 import unittest
 
-from scripts.rollout_foundation_checks import evaluate_indexes, evaluate_protected_file, evaluate_secret_versions
+from scripts.rollout_foundation_checks import (
+    evaluate_enabled_apis,
+    evaluate_indexes,
+    evaluate_project_metadata,
+    evaluate_protected_file,
+    evaluate_secret_versions,
+)
 
 
 INDEXES = json.loads((Path(__file__).resolve().parents[1] / "firestore.indexes.json").read_text())["indexes"]
@@ -123,6 +129,30 @@ class ProtectedFileTests(unittest.TestCase):
             link = root / "link"
             link.symlink_to(target)
             self.assertEqual(evaluate_protected_file(link), {"state": "SYMLINK"})
+
+
+class ProjectFoundationTests(unittest.TestCase):
+    def test_project_identity_requires_exact_active_project(self):
+        metadata = {"projectId": "mark-i-506218", "projectNumber": "691051892786", "lifecycleState": "ACTIVE"}
+        self.assertEqual(
+            evaluate_project_metadata(metadata, project_id="mark-i-506218", project_number="691051892786")["state"],
+            "READY",
+        )
+        for key, value in (("projectId", "wrong"), ("projectNumber", "1"), ("lifecycleState", "DELETE_REQUESTED")):
+            with self.subTest(key=key):
+                changed = {**metadata, key: value}
+                self.assertNotEqual(
+                    evaluate_project_metadata(changed, project_id="mark-i-506218", project_number="691051892786")["state"],
+                    "READY",
+                )
+
+    def test_required_apis_are_compared_by_canonical_name(self):
+        required = ("run.googleapis.com", "pubsub.googleapis.com")
+        live = [{"config": {"name": "run.googleapis.com"}}]
+        self.assertEqual(evaluate_enabled_apis(live, required), {"state": "MISSING", "missing": ["pubsub.googleapis.com"]})
+        live.append({"config": {"name": "pubsub.googleapis.com"}})
+        self.assertEqual(evaluate_enabled_apis(live, required), {"state": "READY", "missing": []})
+        self.assertEqual(evaluate_enabled_apis({}, required)["state"], "INVALID")
 
 
 if __name__ == "__main__":

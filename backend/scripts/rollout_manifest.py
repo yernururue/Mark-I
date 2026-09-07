@@ -37,6 +37,19 @@ SECRETS = (
     "mark-i-scheduler-shared-secret",
 )
 SCHEDULER_JOB = "opportunity-trigger"
+REQUIRED_APIS = (
+    "aiplatform.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "cloudbuild.googleapis.com",
+    "cloudscheduler.googleapis.com",
+    "firestore.googleapis.com",
+    "iam.googleapis.com",
+    "iamcredentials.googleapis.com",
+    "pubsub.googleapis.com",
+    "run.googleapis.com",
+    "secretmanager.googleapis.com",
+    "serviceusage.googleapis.com",
+)
 
 
 def service_account_email(account: str) -> str:

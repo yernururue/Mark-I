@@ -9,6 +9,33 @@ from pathlib import Path
 from typing import Any
 
 
+def evaluate_project_metadata(metadata: Any, *, project_id: str, project_number: str) -> dict[str, Any]:
+    """Verify that gcloud resolved the immutable rollout project."""
+    if not isinstance(metadata, dict):
+        return {"state": "INVALID"}
+    actual_id = metadata.get("projectId")
+    actual_number = str(metadata.get("projectNumber", ""))
+    lifecycle = metadata.get("lifecycleState")
+    if actual_id != project_id or actual_number != project_number:
+        return {"state": "MISMATCH"}
+    if lifecycle != "ACTIVE":
+        return {"state": "INACTIVE", "lifecycle": lifecycle if isinstance(lifecycle, str) else "UNKNOWN"}
+    return {"state": "READY", "project_id": actual_id, "project_number": actual_number}
+
+
+def evaluate_enabled_apis(metadata: Any, required: tuple[str, ...]) -> dict[str, Any]:
+    """Compare enabled API names with the fixed rollout requirement set."""
+    if not isinstance(metadata, list) or not all(isinstance(item, dict) for item in metadata):
+        return {"state": "INVALID", "missing": list(required)}
+    enabled = {
+        item.get("config", {}).get("name")
+        for item in metadata
+        if isinstance(item.get("config"), dict)
+    }
+    missing = sorted(set(required) - enabled)
+    return {"state": "READY" if not missing else "MISSING", "missing": missing}
+
+
 def evaluate_protected_file(path: str | Path | None) -> dict[str, Any]:
     """Check credential-file metadata without opening or naming the file."""
     if path is None or not str(path):
