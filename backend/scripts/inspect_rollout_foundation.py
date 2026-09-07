@@ -14,6 +14,7 @@ from pathlib import Path
 try:
     from scripts.rollout_foundation_checks import (
         evaluate_artifact_repository,
+        evaluate_cloud_run_access,
         evaluate_cloud_run_service,
         evaluate_enabled_apis,
         evaluate_indexes,
@@ -46,6 +47,7 @@ try:
 except ModuleNotFoundError:
     from rollout_foundation_checks import (
         evaluate_artifact_repository,
+        evaluate_cloud_run_access,
         evaluate_cloud_run_service,
         evaluate_enabled_apis,
         evaluate_indexes,
@@ -368,7 +370,8 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     image_prefix = f"{REGION}-docker.pkg.dev/{PROJECT_ID}/{ARTIFACT_REPOSITORY}/mark-i-backend:"
-    for service, account, _ in SERVICES:
+    push_member = f"serviceAccount:{push_email}"
+    for service, account, private in SERVICES:
         state, service_metadata = _metadata_object(
             _run(
                 (
@@ -396,6 +399,25 @@ def main(argv: list[str] | None = None) -> int:
             "ok" if service_result["state"] == "READY" else "not-ready",
             required=options.strict_bootstrap,
             value=service_result,
+        )
+
+        policy_state, policy = _metadata_object(
+            _run(("run", "services", "get-iam-policy", service, f"--region={REGION}", "--format=json"))
+        )
+        policy_name = f"cloud-run-iam/{service}"
+        if policy_state != "ok":
+            record(policy_name, policy_state, required=options.strict_bootstrap)
+            continue
+        access = evaluate_cloud_run_access(
+            policy,
+            public=not private,
+            required_push_member=push_member if private and options.expect_pubsub_mode == "push" else None,
+        )
+        record(
+            policy_name,
+            "ok" if access["state"] == "READY" else "not-ready",
+            required=options.strict_bootstrap,
+            value=access,
         )
 
     for check in _checks():

@@ -218,6 +218,43 @@ def evaluate_cloud_run_service(
     return {"state": "READY", "service": service, "revision": latest}
 
 
+def evaluate_cloud_run_access(
+    policy: Any,
+    *,
+    public: bool,
+    required_push_member: str | None = None,
+) -> dict[str, Any]:
+    """Verify API public access and fail closed on public worker access."""
+    if not isinstance(policy, dict) or not isinstance(policy.get("bindings", []), list):
+        return {"state": "INVALID"}
+    invokers: set[str] = set()
+    conditional = False
+    for binding in policy.get("bindings", []):
+        if not isinstance(binding, dict) or binding.get("role") != "roles/run.invoker":
+            continue
+        members = binding.get("members")
+        if not isinstance(members, list) or not all(isinstance(member, str) for member in members):
+            return {"state": "INVALID"}
+        conditional = conditional or binding.get("condition") is not None
+        if binding.get("condition") is None:
+            invokers.update(members)
+    public_members = sorted(invokers & {"allUsers", "allAuthenticatedUsers"})
+    missing = []
+    if public and "allUsers" not in invokers:
+        missing.append("allUsers")
+    if required_push_member and required_push_member not in invokers:
+        missing.append(required_push_member)
+    unexpected_public = [] if public else public_members
+    state = "READY" if not missing and not unexpected_public and not conditional else "MISMATCH"
+    return {
+        "state": state,
+        "public": "allUsers" in invokers,
+        "missing": sorted(missing),
+        "unexpected_public": unexpected_public,
+        "conditional": conditional,
+    }
+
+
 def evaluate_protected_file(path: str | Path | None) -> dict[str, Any]:
     """Check credential-file metadata without opening or naming the file."""
     if path is None or not str(path):

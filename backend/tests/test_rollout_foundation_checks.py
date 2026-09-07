@@ -7,6 +7,7 @@ import unittest
 
 from scripts.rollout_foundation_checks import (
     evaluate_artifact_repository,
+    evaluate_cloud_run_access,
     evaluate_cloud_run_service,
     evaluate_enabled_apis,
     evaluate_indexes,
@@ -292,6 +293,32 @@ class FoundationResourceTests(unittest.TestCase):
                 else:
                     changed["status"]["traffic"] = [{"revisionName": "mark-i-api-00000", "percent": 100}]
                 self.assertNotEqual(evaluate_cloud_run_service(changed, **arguments)["state"], "READY")
+
+    def test_cloud_run_access_keeps_api_public_and_workers_private(self):
+        public = {"bindings": [{"role": "roles/run.invoker", "members": ["allUsers"]}]}
+        self.assertEqual(evaluate_cloud_run_access(public, public=True)["state"], "READY")
+        self.assertEqual(evaluate_cloud_run_access(public, public=False)["state"], "MISMATCH")
+
+        push = "serviceAccount:mark-i-pubsub-push@mark-i-506218.iam.gserviceaccount.com"
+        private = {"bindings": [{"role": "roles/run.invoker", "members": [push]}]}
+        self.assertEqual(
+            evaluate_cloud_run_access(private, public=False, required_push_member=push)["state"],
+            "READY",
+        )
+        self.assertEqual(
+            evaluate_cloud_run_access({"bindings": []}, public=False, required_push_member=push)["missing"],
+            [push],
+        )
+
+    def test_conditional_invoker_policy_requires_manual_review(self):
+        policy = {
+            "bindings": [{
+                "role": "roles/run.invoker",
+                "members": ["allUsers"],
+                "condition": {"expression": "request.time < timestamp('2030-01-01T00:00:00Z')"},
+            }]
+        }
+        self.assertEqual(evaluate_cloud_run_access(policy, public=True)["state"], "MISMATCH")
 
 
 if __name__ == "__main__":
