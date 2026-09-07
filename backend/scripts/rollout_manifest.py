@@ -71,3 +71,87 @@ def service_account_email(account: str) -> str:
     if account not in SERVICE_ACCOUNTS:
         raise ValueError("unknown rollout service account")
     return f"{account}@{PROJECT_ID}.iam.gserviceaccount.com"
+
+
+def foundation_iam_grants() -> tuple[dict[str, str], ...]:
+    """Return the exact least-privilege grant set for human approval."""
+    project = f"projects/{PROJECT_ID}"
+    grants: list[dict[str, str]] = []
+    for _, account, _ in SERVICES:
+        member = f"serviceAccount:{service_account_email(account)}"
+        grants.extend(
+            (
+                {"resource": project, "role": "roles/datastore.user", "member": member},
+                {"resource": project, "role": "roles/aiplatform.user", "member": member},
+            )
+        )
+
+    api_member = f"serviceAccount:{service_account_email('mark-i-api-runtime')}"
+    github_member = f"serviceAccount:{service_account_email('mark-i-github-worker-runtime')}"
+    build_member = f"serviceAccount:{service_account_email(CLOUD_BUILD_SERVICE_ACCOUNT)}"
+    push_member = f"serviceAccount:{service_account_email(PUBSUB_PUSH_SERVICE_ACCOUNT)}"
+
+    for topic in TOPICS:
+        grants.append(
+            {"resource": f"{project}/topics/{topic}", "role": "roles/pubsub.publisher", "member": api_member}
+        )
+    grants.extend(
+        (
+            {"resource": project, "role": "roles/secretmanager.admin", "member": api_member},
+            {
+                "resource": project,
+                "role": "roles/secretmanager.secretAccessor",
+                "member": github_member,
+                "condition": "resource.name.startsWith('projects/691051892786/secrets/github-token-')",
+            },
+            {"resource": project, "role": "roles/run.admin", "member": build_member},
+            {"resource": project, "role": "roles/logging.logWriter", "member": build_member},
+            {
+                "resource": f"{project}/locations/{REGION}/repositories/{ARTIFACT_REPOSITORY}",
+                "role": "roles/artifactregistry.writer",
+                "member": build_member,
+            },
+        )
+    )
+    for _, account, _ in SERVICES:
+        grants.append(
+            {
+                "resource": f"{project}/serviceAccounts/{service_account_email(account)}",
+                "role": "roles/iam.serviceAccountUser",
+                "member": build_member,
+            }
+        )
+    grants.append(
+        {
+            "resource": f"{project}/serviceAccounts/{service_account_email(PUBSUB_PUSH_SERVICE_ACCOUNT)}",
+            "role": "roles/iam.serviceAccountUser",
+            "member": build_member,
+        }
+    )
+    for subscription in SUBSCRIPTIONS:
+        grants.append(
+            {
+                "resource": f"{project}/subscriptions/{subscription}",
+                "role": "roles/pubsub.editor",
+                "member": build_member,
+            }
+        )
+    for service, _, private in SERVICES:
+        if private:
+            grants.append(
+                {
+                    "resource": f"{project}/locations/{REGION}/services/{service}",
+                    "role": "roles/run.invoker",
+                    "member": push_member,
+                }
+            )
+    for secret, members in SECRET_ACCESSORS.items():
+        for member in members:
+            grants.append(
+                {
+                    "resource": f"{project}/secrets/{secret}",
+                    "role": "roles/secretmanager.secretAccessor",
+                    "member": member,
+                }
+            )
+    return tuple(grants)
