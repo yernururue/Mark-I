@@ -17,3 +17,11 @@ Deploy production-named services while keeping recurring production traffic disa
 
 - Build succeeds and all services pass health/readiness checks.
 - No scheduler exists and existing pull subscriptions have not yet been switched.
+
+## Approval evidence
+
+Render the exact immutable image and service targets before requesting confirmation:
+
+```text
+python3.11 scripts/render_rollout_approval.py bootstrap --image-tag <immutable-release-tag>
+```

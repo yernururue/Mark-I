@@ -1,6 +1,6 @@
 ## ============================================================
 ## Mark-I Backend Tracker
-## Последнее обновление: 2026-09-06
+## Последнее обновление: 2026-09-07
 ## ============================================================
 
 ## --- ИНФРАСТРУКТУРА (День 0) ---
@@ -387,8 +387,8 @@ plans:
 
       - name: deployment-hardening
         file: 02-deployment-hardening.md
-        status: in-progress
-        description: "Pin rollout inputs, bound Cloud Run resources, and gate build/deploy health"
+        status: done
+        description: "Pinned rollout inputs, bounded Cloud Run resources, secret-safe foundation/bootstrap gates, and sanitized approval evidence; locked Python 3.11 suite passed"
         depends_on: initialization-and-baseline
 
       - name: gcp-foundation-and-secrets
@@ -426,11 +426,11 @@ plans:
 ## --- ЧТО СДЕЛАНО В ЭТОМ ЧАТЕ ---
 
 session_log:
-  date: 2026-08-30
-  summary: "Завершён backend-correctness-hardening: Stage 1–3 remediation, security/deploy closure и acceptance"
+  date: 2026-09-07
+  summary: "Завершён repository-side deployment-hardening rollout gate; live GCP baseline остаётся заблокирован отсутствующим gcloud CLI"
   completed:
-    - "Все F-01–F-13, R-01–R-05 и X-01–X-04 закрыты кодом и regression tests."
-    - "Canonical OpenAPI, API/Firestore/Event docs и Firestore indexes синхронизированы с runtime."
-    - "Cloud Run deployment использует private Pub/Sub push worker adapters и Secret Manager bindings."
-    - "Locked Python 3.11 + Firestore Emulator: 215 passed; Docker build/health/import smoke прошли."
-  next_step: "Backend remediation shipped; production deploy требует создать documented secrets, Pub/Sub subscriptions и Cloud Build substitutions."
+    - "Rollout resource names centralized and validated against the fixed project manifest."
+    - "Read-only foundation inspection now covers project identity, APIs, protected credential metadata, registry, service accounts, Pub/Sub topology, Secret IAM, Firestore indexes, Cloud Run revisions and invoker policies."
+    - "Sanitized approval documents enumerate exact foundation, bootstrap, Pub/Sub push and production-promotion targets without applying changes."
+    - "Locked Python 3.11: 300 passed, 2 emulator-only skipped, 3 dependency warnings, 26 subtests passed."
+  next_step: "Install/authenticate gcloud, capture the read-only Stage 0 baseline, then request explicit approval before applying the rendered foundation IAM/resource changes."
