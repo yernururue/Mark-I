@@ -7,6 +7,7 @@ import unittest
 
 from scripts.rollout_foundation_checks import (
     evaluate_artifact_repository,
+    evaluate_cloud_run_service,
     evaluate_enabled_apis,
     evaluate_indexes,
     evaluate_project_metadata,
@@ -262,6 +263,35 @@ class FoundationResourceTests(unittest.TestCase):
                 else:
                     changed["ackDeadlineSeconds"] = 0
                 self.assertEqual(evaluate_pubsub_subscription(changed, **arguments)["state"], "MISMATCH")
+
+    def test_cloud_run_service_requires_dedicated_identity_and_latest_traffic(self):
+        service = "mark-i-api"
+        account = "mark-i-api-runtime@mark-i-506218.iam.gserviceaccount.com"
+        image_prefix = "us-central1-docker.pkg.dev/mark-i-506218/mark-i-backend/mark-i-backend:"
+        metadata = {
+            "metadata": {"name": service},
+            "spec": {"template": {"spec": {"serviceAccountName": account, "containers": [{"image": image_prefix + "release-1"}]}}},
+            "status": {
+                "conditions": [{"type": "Ready", "status": "True"}],
+                "latestCreatedRevisionName": "mark-i-api-00001",
+                "latestReadyRevisionName": "mark-i-api-00001",
+                "traffic": [{"revisionName": "mark-i-api-00001", "percent": 100}],
+            },
+        }
+        arguments = {"service": service, "service_account": account, "image_prefix": image_prefix}
+        self.assertEqual(evaluate_cloud_run_service(metadata, **arguments)["state"], "READY")
+        for mutation in ("account", "image", "created", "traffic"):
+            with self.subTest(mutation=mutation):
+                changed = copy.deepcopy(metadata)
+                if mutation == "account":
+                    changed["spec"]["template"]["spec"]["serviceAccountName"] = "default@example.com"
+                elif mutation == "image":
+                    changed["spec"]["template"]["spec"]["containers"][0]["image"] = image_prefix + "latest"
+                elif mutation == "created":
+                    changed["status"]["latestCreatedRevisionName"] = "mark-i-api-00002"
+                else:
+                    changed["status"]["traffic"] = [{"revisionName": "mark-i-api-00000", "percent": 100}]
+                self.assertNotEqual(evaluate_cloud_run_service(changed, **arguments)["state"], "READY")
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ from pathlib import Path
 try:
     from scripts.rollout_foundation_checks import (
         evaluate_artifact_repository,
+        evaluate_cloud_run_service,
         evaluate_enabled_apis,
         evaluate_indexes,
         evaluate_project_metadata,
@@ -45,6 +46,7 @@ try:
 except ModuleNotFoundError:
     from rollout_foundation_checks import (
         evaluate_artifact_repository,
+        evaluate_cloud_run_service,
         evaluate_enabled_apis,
         evaluate_indexes,
         evaluate_project_metadata,
@@ -95,20 +97,6 @@ def _checks() -> list[Check]:
             True,
         )
         for secret in SECRETS
-    )
-    checks.extend(
-        Check(
-            f"cloud-run/{service}",
-            (
-                "run",
-                "services",
-                "describe",
-                service,
-                f"--region={REGION}",
-                "--format=value(status.conditions[?type=Ready].status)",
-            ),
-        )
-        for service, _, _ in SERVICES
     )
     checks.append(
         Check(
@@ -195,6 +183,11 @@ def main(argv: list[str] | None = None) -> int:
         help="fail if any Stage 2 foundation resource or READY Firestore index is missing",
     )
     parser.add_argument(
+        "--strict-bootstrap",
+        action="store_true",
+        help="also require all three deployed services to be on healthy latest revisions",
+    )
+    parser.add_argument(
         "--expect-pubsub-mode",
         choices=("pull", "push"),
         default="pull",
@@ -233,7 +226,8 @@ def main(argv: list[str] | None = None) -> int:
     def finish() -> int:
         failures = len(report["inspection_errors"])
         gaps = len(report["foundation_gaps"])
-        code = 2 if failures else 1 if options.strict_foundation and gaps else 0
+        strict = options.strict_foundation or options.strict_bootstrap
+        code = 2 if failures else 1 if strict and gaps else 0
         report["status"] = "error" if failures else "incomplete" if gaps else "ok"
         if options.json:
             print(json.dumps(report, sort_keys=True))
@@ -372,6 +366,37 @@ def main(argv: list[str] | None = None) -> int:
                 required=True,
                 value=subscription_result,
             )
+
+    image_prefix = f"{REGION}-docker.pkg.dev/{PROJECT_ID}/{ARTIFACT_REPOSITORY}/mark-i-backend:"
+    for service, account, _ in SERVICES:
+        state, service_metadata = _metadata_object(
+            _run(
+                (
+                    "run",
+                    "services",
+                    "describe",
+                    service,
+                    f"--region={REGION}",
+                    "--format=json(metadata.name,spec.template.spec.serviceAccountName,spec.template.spec.containers,status.conditions,status.latestCreatedRevisionName,status.latestReadyRevisionName,status.traffic)",
+                )
+            )
+        )
+        name = f"cloud-run/{service}"
+        if state != "ok":
+            record(name, state, required=options.strict_bootstrap)
+            continue
+        service_result = evaluate_cloud_run_service(
+            service_metadata,
+            service=service,
+            service_account=service_account_email(account),
+            image_prefix=image_prefix,
+        )
+        record(
+            name,
+            "ok" if service_result["state"] == "READY" else "not-ready",
+            required=options.strict_bootstrap,
+            value=service_result,
+        )
 
     for check in _checks():
         result = _run(check.args)

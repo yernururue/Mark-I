@@ -163,6 +163,61 @@ def evaluate_pubsub_subscription(
     return {"state": "READY", "mode": expected_mode, "ack_deadline_seconds": deadline}
 
 
+def evaluate_cloud_run_service(
+    metadata: Any,
+    *,
+    service: str,
+    service_account: str,
+    image_prefix: str,
+) -> dict[str, Any]:
+    """Verify immutable deployment identity, image and ready-revision traffic."""
+    if not isinstance(metadata, dict):
+        return {"state": "INVALID"}
+    meta = metadata.get("metadata")
+    spec = metadata.get("spec")
+    status = metadata.get("status")
+    if not all(isinstance(value, dict) for value in (meta, spec, status)):
+        return {"state": "INVALID"}
+    template = spec.get("template")
+    template_spec = template.get("spec") if isinstance(template, dict) else None
+    containers = template_spec.get("containers") if isinstance(template_spec, dict) else None
+    if (
+        meta.get("name") != service
+        or not isinstance(template_spec, dict)
+        or template_spec.get("serviceAccountName") != service_account
+        or not isinstance(containers, list)
+        or len(containers) != 1
+        or not isinstance(containers[0], dict)
+    ):
+        return {"state": "MISMATCH"}
+    image = containers[0].get("image")
+    if not isinstance(image, str) or not image.startswith(image_prefix) or image.endswith(":latest"):
+        return {"state": "MISMATCH"}
+    conditions = status.get("conditions")
+    ready = [item for item in conditions or [] if isinstance(item, dict) and item.get("type") == "Ready"]
+    latest = status.get("latestReadyRevisionName")
+    if len(ready) != 1 or ready[0].get("status") != "True" or not latest:
+        return {"state": "NOT_READY"}
+    if status.get("latestCreatedRevisionName") != latest:
+        return {"state": "NOT_READY"}
+    traffic = status.get("traffic")
+    if not isinstance(traffic, list) or not traffic:
+        return {"state": "NOT_READY"}
+    total = 0
+    for target in traffic:
+        if not isinstance(target, dict):
+            return {"state": "INVALID"}
+        percent = target.get("percent", 0)
+        if type(percent) is not int or not 0 <= percent <= 100:
+            return {"state": "INVALID"}
+        if percent and target.get("revisionName") != latest:
+            return {"state": "NOT_READY"}
+        total += percent
+    if total != 100:
+        return {"state": "NOT_READY"}
+    return {"state": "READY", "service": service, "revision": latest}
+
+
 def evaluate_protected_file(path: str | Path | None) -> dict[str, Any]:
     """Check credential-file metadata without opening or naming the file."""
     if path is None or not str(path):

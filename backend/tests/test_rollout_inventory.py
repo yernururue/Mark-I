@@ -63,6 +63,7 @@ def simulated_inventory(monkeypatch):
     monkeypatch.setattr(inventory, "evaluate_project_metadata", lambda metadata, **kwargs: {"state": "READY"})
     monkeypatch.setattr(inventory, "evaluate_enabled_apis", lambda metadata, required: {"state": "READY", "missing": []})
     monkeypatch.setattr(inventory, "SERVICE_ACCOUNTS", ())
+    monkeypatch.setattr(inventory, "SERVICES", ())
     monkeypatch.setattr(inventory, "PUBSUB_TOPOLOGY", ())
     monkeypatch.setattr(inventory, "evaluate_artifact_repository", lambda metadata, **kwargs: {"state": "READY"})
 
