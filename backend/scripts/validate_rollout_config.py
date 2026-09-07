@@ -10,6 +10,10 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
+try:
+    from scripts.rollout_manifest import PROJECT_ID, SECRETS, SERVICES, service_account_email
+except ModuleNotFoundError:
+    from rollout_manifest import PROJECT_ID, SECRETS, SERVICES, service_account_email
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
@@ -28,19 +32,11 @@ REQUIRED_SUBSTITUTIONS = {
     "_SCHEDULER_SHARED_SECRET_VERSION",
 }
 
-REQUIRED_SECRETS = {
-    "mark-i-telegram-bot-token",
-    "mark-i-telegram-webhook-secret",
-    "mark-i-github-client-id",
-    "mark-i-github-client-secret",
-    "mark-i-github-webhook-secret",
-    "mark-i-scheduler-shared-secret",
-}
+REQUIRED_SECRETS = set(SECRETS)
 
 REQUIRED_RUNTIME_IDENTITIES = {
-    "mark-i-api-runtime@$PROJECT_ID.iam.gserviceaccount.com",
-    "mark-i-github-worker-runtime@$PROJECT_ID.iam.gserviceaccount.com",
-    "mark-i-opportunity-worker-runtime@$PROJECT_ID.iam.gserviceaccount.com",
+    service_account_email(account).replace(PROJECT_ID, "$PROJECT_ID")
+    for _, account, _ in SERVICES
 }
 
 
@@ -71,7 +67,7 @@ def validate_effective_inputs(values: dict[str, str], failures: list[str]) -> No
         if not values.get(key):
             failures.append(f"effective build input missing: {key}")
 
-    if values.get("PROJECT_ID") != "mark-i-506218":
+    if values.get("PROJECT_ID") != PROJECT_ID:
         failures.append("effective PROJECT_ID must match the fixed rollout project")
 
     tag = values.get("_IMAGE_TAG", "")
@@ -92,7 +88,7 @@ def validate_effective_inputs(values: dict[str, str], failures: list[str]) -> No
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{4,31}", values.get("_TELEGRAM_BOT_USERNAME", "")):
         failures.append("effective _TELEGRAM_BOT_USERNAME is invalid")
 
-    if values.get("_PUBSUB_PUSH_SERVICE_ACCOUNT") != "mark-i-pubsub-push@mark-i-506218.iam.gserviceaccount.com":
+    if values.get("_PUBSUB_PUSH_SERVICE_ACCOUNT") != f"mark-i-pubsub-push@{PROJECT_ID}.iam.gserviceaccount.com":
         failures.append("effective _PUBSUB_PUSH_SERVICE_ACCOUNT must match the dedicated rollout identity")
 
     if values.get("_CONFIGURE_PUBSUB_PUSH") not in {"true", "false"}:

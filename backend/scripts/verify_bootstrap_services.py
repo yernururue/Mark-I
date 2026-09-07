@@ -9,9 +9,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-PROJECT_ID = "mark-i-506218"
-REGION = "us-central1"
-SERVICES = (("mark-i-api", False), ("mark-i-github-worker", True), ("mark-i-opportunity-worker", True))
+try:
+    from scripts.rollout_manifest import PROJECT_ID, REGION, SERVICES as SERVICE_MANIFEST
+except ModuleNotFoundError:
+    from rollout_manifest import PROJECT_ID, REGION, SERVICES as SERVICE_MANIFEST
+
+SERVICES = tuple((service, private) for service, _, private in SERVICE_MANIFEST)
 COMMAND_TIMEOUT_SECONDS = 30
 HTTP_TIMEOUT_SECONDS = 15
 MAX_HEALTH_BYTES = 16_384

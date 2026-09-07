@@ -13,31 +13,38 @@ from pathlib import Path
 
 try:
     from scripts.rollout_foundation_checks import evaluate_indexes, evaluate_secret_versions
+    from scripts.rollout_manifest import (
+        ARTIFACT_REPOSITORY,
+        DATABASE,
+        PROJECT_ID,
+        REGION,
+        SCHEDULER_JOB,
+        SECRETS,
+        SERVICE_ACCOUNTS,
+        SERVICES,
+        SUBSCRIPTIONS,
+        TOPICS,
+        service_account_email,
+    )
 except ModuleNotFoundError:
     from rollout_foundation_checks import evaluate_indexes, evaluate_secret_versions
+    from rollout_manifest import (
+        ARTIFACT_REPOSITORY,
+        DATABASE,
+        PROJECT_ID,
+        REGION,
+        SCHEDULER_JOB,
+        SECRETS,
+        SERVICE_ACCOUNTS,
+        SERVICES,
+        SUBSCRIPTIONS,
+        TOPICS,
+        service_account_email,
+    )
 
 
-PROJECT_ID = "mark-i-506218"
-REGION = "us-central1"
-DATABASE = "mark-i"
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 COMMAND_TIMEOUT_SECONDS = 30
-
-RUNTIME_SERVICE_ACCOUNTS = (
-    "mark-i-api-runtime",
-    "mark-i-github-worker-runtime",
-    "mark-i-opportunity-worker-runtime",
-    "mark-i-pubsub-push",
-    "mark-i-cloud-build",
-)
-SECRETS = (
-    "mark-i-telegram-bot-token",
-    "mark-i-telegram-webhook-secret",
-    "mark-i-github-client-id",
-    "mark-i-github-client-secret",
-    "mark-i-github-webhook-secret",
-    "mark-i-scheduler-shared-secret",
-)
 
 
 @dataclass(frozen=True)
@@ -56,29 +63,25 @@ def _checks() -> list[Check]:
                 "artifacts",
                 "repositories",
                 "describe",
-                "mark-i-backend",
+                ARTIFACT_REPOSITORY,
                 f"--location={REGION}",
                 "--format=value(name)",
             ),
             True,
         ),
-        Check("pubsub/topic/github-events", ("pubsub", "topics", "describe", "github-events", "--format=value(name)"), True),
-        Check(
-            "pubsub/topic/opportunity-collect",
-            ("pubsub", "topics", "describe", "opportunity-collect", "--format=value(name)"),
-            True,
-        ),
-        Check(
-            "pubsub/subscription/github-events-sub",
-            ("pubsub", "subscriptions", "describe", "github-events-sub", "--format=value(name)"),
-            True,
-        ),
-        Check(
-            "pubsub/subscription/opportunity-collect-sub",
-            ("pubsub", "subscriptions", "describe", "opportunity-collect-sub", "--format=value(name)"),
-            True,
-        ),
     ]
+    checks.extend(
+        Check(f"pubsub/topic/{topic}", ("pubsub", "topics", "describe", topic, "--format=value(name)"), True)
+        for topic in TOPICS
+    )
+    checks.extend(
+        Check(
+            f"pubsub/subscription/{subscription}",
+            ("pubsub", "subscriptions", "describe", subscription, "--format=value(name)"),
+            True,
+        )
+        for subscription in SUBSCRIPTIONS
+    )
     checks.extend(
         Check(
             f"service-account/{account}",
@@ -86,12 +89,12 @@ def _checks() -> list[Check]:
                 "iam",
                 "service-accounts",
                 "describe",
-                f"{account}@{PROJECT_ID}.iam.gserviceaccount.com",
+                service_account_email(account),
                 "--format=value(email)",
             ),
             True,
         )
-        for account in RUNTIME_SERVICE_ACCOUNTS
+        for account in SERVICE_ACCOUNTS
     )
     checks.extend(
         Check(
@@ -113,7 +116,7 @@ def _checks() -> list[Check]:
                 "--format=value(status.conditions[?type=Ready].status)",
             ),
         )
-        for service in ("mark-i-api", "mark-i-github-worker", "mark-i-opportunity-worker")
+        for service, _, _ in SERVICES
     )
     checks.append(
         Check(
@@ -122,7 +125,7 @@ def _checks() -> list[Check]:
                 "scheduler",
                 "jobs",
                 "describe",
-                "opportunity-trigger",
+                SCHEDULER_JOB,
                 f"--location={REGION}",
                 "--format=value(state)",
             ),
