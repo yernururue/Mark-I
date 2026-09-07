@@ -4,7 +4,29 @@ from __future__ import annotations
 
 import json
 import re
+import stat
+from pathlib import Path
 from typing import Any
+
+
+def evaluate_protected_file(path: str | Path | None) -> dict[str, Any]:
+    """Check credential-file metadata without opening or naming the file."""
+    if path is None or not str(path):
+        return {"state": "UNSET"}
+    candidate = Path(path)
+    try:
+        metadata = candidate.lstat()
+    except (OSError, ValueError, TypeError):
+        return {"state": "MISSING"}
+    if stat.S_ISLNK(metadata.st_mode):
+        return {"state": "SYMLINK"}
+    if not stat.S_ISREG(metadata.st_mode):
+        return {"state": "NOT_REGULAR"}
+    mode = stat.S_IMODE(metadata.st_mode)
+    return {
+        "state": "READY" if mode == 0o600 else "INSECURE_MODE",
+        "mode": f"{mode:04o}",
+    }
 
 
 def _index_signature(index: dict[str, Any], *, ignore_name: bool) -> tuple:

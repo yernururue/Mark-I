@@ -105,8 +105,33 @@ def test_no_active_account_stops_inventory(simulated_inventory, capsys):
 
 def test_json_output_is_one_complete_document(simulated_inventory, capsys):
     simulated_inventory()
-    assert inventory.main(["--strict-foundation", "--json"]) == 0
+    assert inventory.main(["--json"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["status"] == "ok"
     assert report["scope"]["project"] == inventory.PROJECT_ID
     assert report["schema_version"] == 1
+
+
+def test_strict_inventory_requires_protected_github_credential_file(simulated_inventory, capsys):
+    simulated_inventory()
+    assert inventory.main(["--strict-foundation", "--json"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert "local/github-credential-file" in report["foundation_gaps"]
+    assert report["checks"][0]["value"] == {"state": "UNSET"}
+
+
+def test_inventory_reports_only_credential_metadata(simulated_inventory, capsys, tmp_path):
+    credential = tmp_path / "sensitive-name"
+    credential.write_text("super-secret-value", encoding="utf-8")
+    credential.chmod(0o600)
+    simulated_inventory()
+    assert inventory.main(["--strict-foundation", "--json", "--github-credential-file", str(credential)]) == 0
+    output = capsys.readouterr().out
+    assert str(credential) not in output
+    assert "super-secret-value" not in output
+    report = json.loads(output)
+    assert report["checks"][0] == {
+        "name": "local/github-credential-file",
+        "state": "ok",
+        "value": {"mode": "0600", "state": "READY"},
+    }

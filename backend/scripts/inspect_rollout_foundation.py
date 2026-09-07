@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:
-    from scripts.rollout_foundation_checks import evaluate_indexes, evaluate_secret_versions
+    from scripts.rollout_foundation_checks import evaluate_indexes, evaluate_protected_file, evaluate_secret_versions
     from scripts.rollout_manifest import (
         ARTIFACT_REPOSITORY,
         DATABASE,
@@ -27,7 +27,7 @@ try:
         service_account_email,
     )
 except ModuleNotFoundError:
-    from rollout_foundation_checks import evaluate_indexes, evaluate_secret_versions
+    from rollout_foundation_checks import evaluate_indexes, evaluate_protected_file, evaluate_secret_versions
     from rollout_manifest import (
         ARTIFACT_REPOSITORY,
         DATABASE,
@@ -190,6 +190,11 @@ def main(argv: list[str] | None = None) -> int:
         help="fail if any Stage 2 foundation resource or READY Firestore index is missing",
     )
     parser.add_argument("--json", action="store_true", help="emit one sanitized JSON evidence document")
+    parser.add_argument(
+        "--github-credential-file",
+        type=Path,
+        help="inspect metadata for the protected GitHub credential input without reading it",
+    )
     options = parser.parse_args(argv)
 
     report = {
@@ -200,6 +205,9 @@ def main(argv: list[str] | None = None) -> int:
         "foundation_gaps": [],
         "inspection_errors": [],
     }
+
+    credential = evaluate_protected_file(options.github_credential_file)
+    credential_ready = credential["state"] == "READY"
 
     def record(name: str, state: str, *, required: bool = False, value=None) -> None:
         entry = {"name": name, "state": state}
@@ -230,6 +238,12 @@ def main(argv: list[str] | None = None) -> int:
         return code
 
     if shutil.which("gcloud") is None:
+        record(
+            "local/github-credential-file",
+            "ok" if credential_ready else "not-ready",
+            required=options.strict_foundation,
+            value=credential,
+        )
         record("gcloud-cli", "command-error")
         return finish()
 
@@ -240,6 +254,13 @@ def main(argv: list[str] | None = None) -> int:
         record("active-account", "auth-error" if account_state == "empty" else account_state)
         return finish()
     report["active_account"] = account
+
+    record(
+        "local/github-credential-file",
+        "ok" if credential_ready else "not-ready",
+        required=options.strict_foundation,
+        value=credential,
+    )
 
     for check in _checks():
         result = _run(check.args)

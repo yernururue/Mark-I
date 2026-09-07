@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import unittest
 
-from scripts.rollout_foundation_checks import evaluate_indexes, evaluate_secret_versions
+from scripts.rollout_foundation_checks import evaluate_indexes, evaluate_protected_file, evaluate_secret_versions
 
 
 INDEXES = json.loads((Path(__file__).resolve().parents[1] / "firestore.indexes.json").read_text())["indexes"]
@@ -96,6 +96,33 @@ class SecretReadinessTests(unittest.TestCase):
         self.assertEqual(evaluate_secret_versions(versions)["state"], "UNKNOWN")
         with self.assertRaises(ValueError):
             evaluate_secret_versions([], "garbage")
+
+
+class ProtectedFileTests(unittest.TestCase):
+    def test_regular_file_requires_exact_0600_mode(self):
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory, "credential")
+            path.write_text("never-read", encoding="utf-8")
+            path.chmod(0o600)
+            self.assertEqual(evaluate_protected_file(path), {"state": "READY", "mode": "0600"})
+            path.chmod(0o640)
+            self.assertEqual(evaluate_protected_file(path), {"state": "INSECURE_MODE", "mode": "0640"})
+
+    def test_unset_missing_directory_and_symlink_fail_closed(self):
+        from tempfile import TemporaryDirectory
+
+        self.assertEqual(evaluate_protected_file(None), {"state": "UNSET"})
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.assertEqual(evaluate_protected_file(root / "missing"), {"state": "MISSING"})
+            self.assertEqual(evaluate_protected_file(root), {"state": "NOT_REGULAR"})
+            target = root / "target"
+            target.write_text("never-read", encoding="utf-8")
+            link = root / "link"
+            link.symlink_to(target)
+            self.assertEqual(evaluate_protected_file(link), {"state": "SYMLINK"})
 
 
 if __name__ == "__main__":
