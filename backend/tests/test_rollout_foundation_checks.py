@@ -11,6 +11,8 @@ from scripts.rollout_foundation_checks import (
     evaluate_indexes,
     evaluate_project_metadata,
     evaluate_protected_file,
+    evaluate_pubsub_subscription,
+    evaluate_pubsub_topic,
     evaluate_role_bindings,
     evaluate_service_account,
     evaluate_secret_versions,
@@ -204,6 +206,62 @@ class FoundationResourceTests(unittest.TestCase):
         for key, value in (("format", "MAVEN"), ("mode", "REMOTE_REPOSITORY"), ("name", "wrong")):
             with self.subTest(key=key):
                 self.assertEqual(evaluate_artifact_repository({**metadata, key: value}, **arguments)["state"], "MISMATCH")
+
+    def test_pubsub_topic_and_pull_subscription_match_fixed_topology(self):
+        project = "mark-i-506218"
+        topic = {"name": f"projects/{project}/topics/github-events"}
+        self.assertEqual(evaluate_pubsub_topic(topic, project_id=project, topic="github-events")["state"], "READY")
+        subscription = {
+            "name": f"projects/{project}/subscriptions/github-events-sub",
+            "topic": topic["name"],
+            "ackDeadlineSeconds": 30,
+            "pushConfig": {},
+        }
+        result = evaluate_pubsub_subscription(
+            subscription,
+            project_id=project,
+            topic="github-events",
+            subscription="github-events-sub",
+            expected_mode="pull",
+            push_service_account=f"push@{project}.iam.gserviceaccount.com",
+        )
+        self.assertEqual(result, {"state": "READY", "mode": "pull", "ack_deadline_seconds": 30})
+
+    def test_authenticated_push_requires_exact_identity_audience_and_cloud_run_url(self):
+        project = "mark-i-506218"
+        email = f"push@{project}.iam.gserviceaccount.com"
+        endpoint = "https://mark-i-github-worker-example.us-central1.run.app"
+        metadata = {
+            "name": f"projects/{project}/subscriptions/github-events-sub",
+            "topic": f"projects/{project}/topics/github-events",
+            "ackDeadlineSeconds": 30,
+            "pushConfig": {
+                "pushEndpoint": endpoint,
+                "oidcToken": {"serviceAccountEmail": email, "audience": endpoint},
+            },
+        }
+        arguments = {
+            "project_id": project,
+            "topic": "github-events",
+            "subscription": "github-events-sub",
+            "expected_mode": "push",
+            "push_service_account": email,
+        }
+        self.assertEqual(evaluate_pubsub_subscription(metadata, **arguments)["state"], "READY")
+        for mutation in ("identity", "audience", "endpoint", "topic", "deadline"):
+            with self.subTest(mutation=mutation):
+                changed = copy.deepcopy(metadata)
+                if mutation == "identity":
+                    changed["pushConfig"]["oidcToken"]["serviceAccountEmail"] = "other@example.com"
+                elif mutation == "audience":
+                    changed["pushConfig"]["oidcToken"]["audience"] = "https://other.run.app"
+                elif mutation == "endpoint":
+                    changed["pushConfig"]["pushEndpoint"] = "http://example.com"
+                elif mutation == "topic":
+                    changed["topic"] = f"projects/{project}/topics/other"
+                else:
+                    changed["ackDeadlineSeconds"] = 0
+                self.assertEqual(evaluate_pubsub_subscription(changed, **arguments)["state"], "MISMATCH")
 
 
 if __name__ == "__main__":

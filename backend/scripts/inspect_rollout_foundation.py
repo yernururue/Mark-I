@@ -18,6 +18,8 @@ try:
         evaluate_indexes,
         evaluate_project_metadata,
         evaluate_protected_file,
+        evaluate_pubsub_subscription,
+        evaluate_pubsub_topic,
         evaluate_role_bindings,
         evaluate_service_account,
         evaluate_secret_versions,
@@ -27,6 +29,8 @@ try:
         DATABASE,
         PROJECT_ID,
         PROJECT_NUMBER,
+        PUBSUB_PUSH_SERVICE_ACCOUNT,
+        PUBSUB_TOPOLOGY,
         REQUIRED_APIS,
         REGION,
         SCHEDULER_JOB,
@@ -45,6 +49,8 @@ except ModuleNotFoundError:
         evaluate_indexes,
         evaluate_project_metadata,
         evaluate_protected_file,
+        evaluate_pubsub_subscription,
+        evaluate_pubsub_topic,
         evaluate_role_bindings,
         evaluate_service_account,
         evaluate_secret_versions,
@@ -54,6 +60,8 @@ except ModuleNotFoundError:
         DATABASE,
         PROJECT_ID,
         PROJECT_NUMBER,
+        PUBSUB_PUSH_SERVICE_ACCOUNT,
+        PUBSUB_TOPOLOGY,
         REQUIRED_APIS,
         REGION,
         SCHEDULER_JOB,
@@ -80,18 +88,6 @@ class Check:
 
 def _checks() -> list[Check]:
     checks = []
-    checks.extend(
-        Check(f"pubsub/topic/{topic}", ("pubsub", "topics", "describe", topic, "--format=value(name)"), True)
-        for topic in TOPICS
-    )
-    checks.extend(
-        Check(
-            f"pubsub/subscription/{subscription}",
-            ("pubsub", "subscriptions", "describe", subscription, "--format=value(name)"),
-            True,
-        )
-        for subscription in SUBSCRIPTIONS
-    )
     checks.extend(
         Check(
             f"secret/{secret}",
@@ -197,6 +193,12 @@ def main(argv: list[str] | None = None) -> int:
         "--strict-foundation",
         action="store_true",
         help="fail if any Stage 2 foundation resource or READY Firestore index is missing",
+    )
+    parser.add_argument(
+        "--expect-pubsub-mode",
+        choices=("pull", "push"),
+        default="pull",
+        help="expected subscription mode for the current rollout gate",
     )
     parser.add_argument("--json", action="store_true", help="emit one sanitized JSON evidence document")
     parser.add_argument(
@@ -328,6 +330,48 @@ def main(argv: list[str] | None = None) -> int:
             continue
         identity = evaluate_service_account(account_metadata, expected_email=email)
         record(name, "ok" if identity["state"] == "READY" else "not-ready", required=True, value=identity)
+
+    push_email = service_account_email(PUBSUB_PUSH_SERVICE_ACCOUNT)
+    for topic, subscription in PUBSUB_TOPOLOGY:
+        state, topic_metadata = _metadata_object(
+            _run(("pubsub", "topics", "describe", topic, "--format=json(name)"))
+        )
+        topic_name = f"pubsub/topic/{topic}"
+        if state != "ok":
+            record(topic_name, state, required=True)
+        else:
+            topic_result = evaluate_pubsub_topic(topic_metadata, project_id=PROJECT_ID, topic=topic)
+            record(topic_name, "ok" if topic_result["state"] == "READY" else "not-ready", required=True, value=topic_result)
+
+        state, subscription_metadata = _metadata_object(
+            _run(
+                (
+                    "pubsub",
+                    "subscriptions",
+                    "describe",
+                    subscription,
+                    "--format=json(name,topic,ackDeadlineSeconds,pushConfig)",
+                )
+            )
+        )
+        subscription_name = f"pubsub/subscription/{subscription}"
+        if state != "ok":
+            record(subscription_name, state, required=True)
+        else:
+            subscription_result = evaluate_pubsub_subscription(
+                subscription_metadata,
+                project_id=PROJECT_ID,
+                topic=topic,
+                subscription=subscription,
+                expected_mode=options.expect_pubsub_mode,
+                push_service_account=push_email,
+            )
+            record(
+                subscription_name,
+                "ok" if subscription_result["state"] == "READY" else "not-ready",
+                required=True,
+                value=subscription_result,
+            )
 
     for check in _checks():
         result = _run(check.args)

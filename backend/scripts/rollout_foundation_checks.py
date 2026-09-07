@@ -7,6 +7,7 @@ import re
 import stat
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 
 def evaluate_project_metadata(metadata: Any, *, project_id: str, project_number: str) -> dict[str, Any]:
@@ -101,6 +102,65 @@ def evaluate_artifact_repository(
     if fields != {"name": expected_name, "format": "DOCKER", "mode": "STANDARD_REPOSITORY"}:
         return {"state": "MISMATCH"}
     return {"state": "READY", **fields}
+
+
+def evaluate_pubsub_topic(metadata: Any, *, project_id: str, topic: str) -> dict[str, Any]:
+    """Require a topic in the fixed rollout project."""
+    if not isinstance(metadata, dict):
+        return {"state": "INVALID"}
+    if metadata.get("name") != f"projects/{project_id}/topics/{topic}":
+        return {"state": "MISMATCH"}
+    return {"state": "READY", "topic": topic}
+
+
+def evaluate_pubsub_subscription(
+    metadata: Any,
+    *,
+    project_id: str,
+    topic: str,
+    subscription: str,
+    expected_mode: str,
+    push_service_account: str,
+) -> dict[str, Any]:
+    """Verify topic attribution and pull/authenticated-push rollout mode."""
+    if expected_mode not in {"pull", "push"} or not isinstance(metadata, dict):
+        return {"state": "INVALID"}
+    expected_name = f"projects/{project_id}/subscriptions/{subscription}"
+    expected_topic = f"projects/{project_id}/topics/{topic}"
+    deadline = metadata.get("ackDeadlineSeconds")
+    if metadata.get("name") != expected_name or metadata.get("topic") != expected_topic:
+        return {"state": "MISMATCH"}
+    if type(deadline) is not int or not 10 <= deadline <= 600:
+        return {"state": "MISMATCH"}
+    push = metadata.get("pushConfig")
+    if expected_mode == "pull":
+        if push not in (None, {}):
+            return {"state": "MISMATCH"}
+    else:
+        if not isinstance(push, dict):
+            return {"state": "MISMATCH"}
+        endpoint = push.get("pushEndpoint")
+        token = push.get("oidcToken")
+        try:
+            parsed = urlsplit(endpoint)
+            canonical_endpoint = (
+                parsed.scheme == "https"
+                and parsed.hostname is not None
+                and parsed.hostname.endswith(".run.app")
+                and parsed.path in ("", "/")
+                and not parsed.query
+                and not parsed.fragment
+            )
+        except (TypeError, ValueError):
+            canonical_endpoint = False
+        if (
+            not canonical_endpoint
+            or not isinstance(token, dict)
+            or token.get("serviceAccountEmail") != push_service_account
+            or token.get("audience") != endpoint
+        ):
+            return {"state": "MISMATCH"}
+    return {"state": "READY", "mode": expected_mode, "ack_deadline_seconds": deadline}
 
 
 def evaluate_protected_file(path: str | Path | None) -> dict[str, Any]:

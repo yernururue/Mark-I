@@ -28,6 +28,7 @@ SERVICE_ACCOUNTS = tuple(account for _, account, _ in SERVICES) + (
 
 TOPICS = ("github-events", "opportunity-collect")
 SUBSCRIPTIONS = ("github-events-sub", "opportunity-collect-sub")
+PUBSUB_TOPOLOGY = tuple(zip(TOPICS, SUBSCRIPTIONS, strict=True))
 SECRETS = (
     "mark-i-telegram-bot-token",
     "mark-i-telegram-webhook-secret",

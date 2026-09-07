@@ -5,6 +5,7 @@ import pytest
 from scripts import inspect_rollout_foundation, validate_rollout_config, verify_bootstrap_services
 from scripts.rollout_manifest import (
     PROJECT_ID,
+    PUBSUB_TOPOLOGY,
     SECRETS,
     SECRET_ACCESSORS,
     SERVICE_ACCOUNTS,
@@ -34,3 +35,10 @@ def test_every_secret_has_an_explicit_minimal_accessor_set():
     assert set(SECRET_ACCESSORS) == set(SECRETS)
     assert all(accessors for accessors in SECRET_ACCESSORS.values())
     assert all(member.startswith("serviceAccount:mark-i-") for accessors in SECRET_ACCESSORS.values() for member in accessors)
+
+
+def test_each_topic_has_one_fixed_subscription():
+    assert PUBSUB_TOPOLOGY == (
+        ("github-events", "github-events-sub"),
+        ("opportunity-collect", "opportunity-collect-sub"),
+    )
