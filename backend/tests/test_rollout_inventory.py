@@ -55,13 +55,15 @@ def simulated_inventory(monkeypatch):
     monkeypatch.setattr(
         inventory,
         "_checks",
-        lambda: [inventory.Check("foundation-resource", ("artifacts", "repositories", "describe"), True)],
+        lambda: [inventory.Check("foundation-resource", ("pubsub", "topics", "describe"), True)],
     )
     monkeypatch.setattr(inventory, "SECRETS", ())
     monkeypatch.setattr(inventory, "SECRET_ACCESSORS", {})
     monkeypatch.setattr(inventory, "evaluate_indexes", lambda expected, live: [{"state": "READY"}])
     monkeypatch.setattr(inventory, "evaluate_project_metadata", lambda metadata, **kwargs: {"state": "READY"})
     monkeypatch.setattr(inventory, "evaluate_enabled_apis", lambda metadata, required: {"state": "READY", "missing": []})
+    monkeypatch.setattr(inventory, "SERVICE_ACCOUNTS", ())
+    monkeypatch.setattr(inventory, "evaluate_artifact_repository", lambda metadata, **kwargs: {"state": "READY"})
 
     def configure(*, resource_code=0, resource_error="", account="builder@example.com", index_code=0):
         def run(args):
@@ -71,6 +73,8 @@ def simulated_inventory(monkeypatch):
                 return subprocess.CompletedProcess(args, 0, "{}", "")
             if args[0] == "services":
                 return subprocess.CompletedProcess(args, 0, "[]", "")
+            if args[0] == "artifacts":
+                return subprocess.CompletedProcess(args, 0, "{}", "")
             if args[0] == "firestore":
                 return subprocess.CompletedProcess(args, index_code, "[]", "PERMISSION_DENIED secret-diagnostic")
             return subprocess.CompletedProcess(

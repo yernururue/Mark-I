@@ -6,11 +6,13 @@ from pathlib import Path
 import unittest
 
 from scripts.rollout_foundation_checks import (
+    evaluate_artifact_repository,
     evaluate_enabled_apis,
     evaluate_indexes,
     evaluate_project_metadata,
     evaluate_protected_file,
     evaluate_role_bindings,
+    evaluate_service_account,
     evaluate_secret_versions,
 )
 
@@ -181,6 +183,27 @@ class IamPolicyTests(unittest.TestCase):
     def test_malformed_policy_is_invalid(self):
         result = evaluate_role_bindings([], role="roles/run.invoker", required_members=("serviceAccount:test",))
         self.assertEqual(result["state"], "INVALID")
+
+
+class FoundationResourceTests(unittest.TestCase):
+    def test_service_account_must_be_exact_and_enabled(self):
+        email = "runtime@mark-i-506218.iam.gserviceaccount.com"
+        metadata = {"name": f"projects/-/serviceAccounts/{email}", "email": email, "disabled": False}
+        self.assertEqual(evaluate_service_account(metadata, expected_email=email)["state"], "READY")
+        self.assertEqual(evaluate_service_account({**metadata, "disabled": True}, expected_email=email)["state"], "DISABLED")
+        self.assertEqual(evaluate_service_account({**metadata, "email": "wrong@example.com"}, expected_email=email)["state"], "MISMATCH")
+
+    def test_artifact_repository_must_be_regional_standard_docker(self):
+        metadata = {
+            "name": "projects/mark-i-506218/locations/us-central1/repositories/mark-i-backend",
+            "format": "DOCKER",
+            "mode": "STANDARD_REPOSITORY",
+        }
+        arguments = {"project_id": "mark-i-506218", "region": "us-central1", "repository": "mark-i-backend"}
+        self.assertEqual(evaluate_artifact_repository(metadata, **arguments)["state"], "READY")
+        for key, value in (("format", "MAVEN"), ("mode", "REMOTE_REPOSITORY"), ("name", "wrong")):
+            with self.subTest(key=key):
+                self.assertEqual(evaluate_artifact_repository({**metadata, key: value}, **arguments)["state"], "MISMATCH")
 
 
 if __name__ == "__main__":

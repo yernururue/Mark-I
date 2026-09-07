@@ -13,11 +13,13 @@ from pathlib import Path
 
 try:
     from scripts.rollout_foundation_checks import (
+        evaluate_artifact_repository,
         evaluate_enabled_apis,
         evaluate_indexes,
         evaluate_project_metadata,
         evaluate_protected_file,
         evaluate_role_bindings,
+        evaluate_service_account,
         evaluate_secret_versions,
     )
     from scripts.rollout_manifest import (
@@ -38,11 +40,13 @@ try:
     )
 except ModuleNotFoundError:
     from rollout_foundation_checks import (
+        evaluate_artifact_repository,
         evaluate_enabled_apis,
         evaluate_indexes,
         evaluate_project_metadata,
         evaluate_protected_file,
         evaluate_role_bindings,
+        evaluate_service_account,
         evaluate_secret_versions,
     )
     from rollout_manifest import (
@@ -75,20 +79,7 @@ class Check:
 
 
 def _checks() -> list[Check]:
-    checks = [
-        Check(
-            "artifact-registry/mark-i-backend",
-            (
-                "artifacts",
-                "repositories",
-                "describe",
-                ARTIFACT_REPOSITORY,
-                f"--location={REGION}",
-                "--format=value(name)",
-            ),
-            True,
-        ),
-    ]
+    checks = []
     checks.extend(
         Check(f"pubsub/topic/{topic}", ("pubsub", "topics", "describe", topic, "--format=value(name)"), True)
         for topic in TOPICS
@@ -100,20 +91,6 @@ def _checks() -> list[Check]:
             True,
         )
         for subscription in SUBSCRIPTIONS
-    )
-    checks.extend(
-        Check(
-            f"service-account/{account}",
-            (
-                "iam",
-                "service-accounts",
-                "describe",
-                service_account_email(account),
-                "--format=value(email)",
-            ),
-            True,
-        )
-        for account in SERVICE_ACCOUNTS
     )
     checks.extend(
         Check(
@@ -311,6 +288,46 @@ def main(argv: list[str] | None = None) -> int:
     else:
         apis = evaluate_enabled_apis(enabled_apis, REQUIRED_APIS)
         record("project/required-apis", "ok" if apis["state"] == "READY" else "not-ready", required=True, value=apis)
+
+    state, repository_metadata = _metadata_object(
+        _run(
+            (
+                "artifacts",
+                "repositories",
+                "describe",
+                ARTIFACT_REPOSITORY,
+                f"--location={REGION}",
+                "--format=json(name,format,mode)",
+            )
+        )
+    )
+    if state != "ok":
+        record(f"artifact-registry/{ARTIFACT_REPOSITORY}", state, required=True)
+    else:
+        repository = evaluate_artifact_repository(
+            repository_metadata,
+            project_id=PROJECT_ID,
+            region=REGION,
+            repository=ARTIFACT_REPOSITORY,
+        )
+        record(
+            f"artifact-registry/{ARTIFACT_REPOSITORY}",
+            "ok" if repository["state"] == "READY" else "not-ready",
+            required=True,
+            value=repository,
+        )
+
+    for account in SERVICE_ACCOUNTS:
+        email = service_account_email(account)
+        state, account_metadata = _metadata_object(
+            _run(("iam", "service-accounts", "describe", email, "--format=json(name,email,disabled)"))
+        )
+        name = f"service-account/{account}"
+        if state != "ok":
+            record(name, state, required=True)
+            continue
+        identity = evaluate_service_account(account_metadata, expected_email=email)
+        record(name, "ok" if identity["state"] == "READY" else "not-ready", required=True, value=identity)
 
     for check in _checks():
         result = _run(check.args)

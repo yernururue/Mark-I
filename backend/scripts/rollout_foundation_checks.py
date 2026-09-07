@@ -66,6 +66,43 @@ def evaluate_role_bindings(
     return {"state": state, "missing": missing, "unexpected": unexpected, "conditional": conditional}
 
 
+def evaluate_service_account(metadata: Any, *, expected_email: str) -> dict[str, Any]:
+    """Require the exact enabled service-account identity."""
+    if not isinstance(metadata, dict):
+        return {"state": "INVALID"}
+    email = metadata.get("email")
+    name = metadata.get("name")
+    expected_name = f"projects/-/serviceAccounts/{expected_email}"
+    if email != expected_email or name != expected_name:
+        return {"state": "MISMATCH"}
+    if metadata.get("disabled") is True:
+        return {"state": "DISABLED", "email": email}
+    if metadata.get("disabled") not in (False, None):
+        return {"state": "INVALID"}
+    return {"state": "READY", "email": email}
+
+
+def evaluate_artifact_repository(
+    metadata: Any,
+    *,
+    project_id: str,
+    region: str,
+    repository: str,
+) -> dict[str, Any]:
+    """Require the fixed regional standard Docker repository."""
+    if not isinstance(metadata, dict):
+        return {"state": "INVALID"}
+    expected_name = f"projects/{project_id}/locations/{region}/repositories/{repository}"
+    fields = {
+        "name": metadata.get("name"),
+        "format": metadata.get("format"),
+        "mode": metadata.get("mode", "STANDARD_REPOSITORY"),
+    }
+    if fields != {"name": expected_name, "format": "DOCKER", "mode": "STANDARD_REPOSITORY"}:
+        return {"state": "MISMATCH"}
+    return {"state": "READY", **fields}
+
+
 def evaluate_protected_file(path: str | Path | None) -> dict[str, Any]:
     """Check credential-file metadata without opening or naming the file."""
     if path is None or not str(path):
