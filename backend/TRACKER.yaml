@@ -1,6 +1,6 @@
 ## ============================================================
 ## Mark-I Backend Tracker
-## Последнее обновление: 2026-09-07
+## Последнее обновление: 2026-09-08
 ## ============================================================
 
 ## --- ИНФРАСТРУКТУРА (День 0) ---
@@ -426,11 +426,13 @@ plans:
 ## --- ЧТО СДЕЛАНО В ЭТОМ ЧАТЕ ---
 
 session_log:
-  date: 2026-09-07
-  summary: "Завершён repository-side deployment-hardening rollout gate; live GCP baseline остаётся заблокирован отсутствующим gcloud CLI"
+  date: 2026-09-08
+  summary: "Stage 0 baseline gate now binds sanitized evidence to immutable repository inputs and separates pre-foundation readiness from Stage 2 resource readiness; live GCP baseline remains blocked by the missing gcloud CLI"
   completed:
-    - "Rollout resource names centralized and validated against the fixed project manifest."
-    - "Read-only foundation inspection now covers project identity, APIs, protected credential metadata, registry, service accounts, Pub/Sub topology, Secret IAM, Firestore indexes, Cloud Run revisions and invoker policies."
-    - "Sanitized approval documents enumerate exact foundation, bootstrap, Pub/Sub push and production-promotion targets without applying changes."
-    - "Locked Python 3.11: 300 passed, 2 emulator-only skipped, 3 dependency warnings, 26 subtests passed."
-  next_step: "Install/authenticate gcloud, capture the read-only Stage 0 baseline, then request explicit approval before applying the rendered foundation IAM/resource changes."
+    - "Evidence records the exact Git commit and SHA-256 digests of deployment-critical inputs without exposing changed file paths."
+    - "The inventory verifies a parseable gcloud SDK version before authentication and project inspection."
+    - "Evidence can be written to a new owner-only 0600 file and cannot overwrite a previous baseline."
+    - "The Stage 0 strict-baseline gate permits not-yet-created Stage 2 resources while still failing closed on dirty provenance, missing protected input, project mismatch, API gaps, authentication, permission, or network errors."
+    - "The exact non-mutating foundation approval target is attached to the same evidence document."
+    - "Locked Python 3.11: 308 passed, 2 emulator-only skipped, 3 dependency warnings, 26 subtests passed."
+  next_step: "Install/authenticate gcloud, capture the read-only Stage 0 baseline with --strict-baseline and secure output, then request explicit approval before applying the attached foundation IAM/resource targets."

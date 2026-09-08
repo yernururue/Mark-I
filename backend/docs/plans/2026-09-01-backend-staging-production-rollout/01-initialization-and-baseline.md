@@ -21,8 +21,15 @@ Create the independent rollout workstream and record the immutable pre-change st
 
 The repository and locked Python 3.11 baselines are reproducible, but the local workstation still has no `gcloud` CLI. Live project inventory therefore remains unverified and this task stays `in-progress`.
 
+The hardened local gate and its verification are recorded in [the 2026-09-08 checkpoint](../../reports/2026-09-08-backend-rollout-baseline-gate.md).
+
 Once the CLI is installed and authenticated, capture sanitized metadata without reading the credential file or any secret payload:
 
 ```text
-python3.11 scripts/inspect_rollout_foundation.py --strict-foundation --github-credential-file <protected-path> --json
+python3.11 scripts/inspect_rollout_foundation.py \
+  --strict-baseline \
+  --github-credential-file <protected-path> \
+  --output <new-owner-only-evidence-path>
 ```
+
+`--strict-baseline` requires clean repository provenance, protected credential metadata, the immutable project identity, and required APIs while allowing Stage 2 resources to be absent. After foundation provisioning, rerun with `--strict-foundation` to require those resources and indexes as well. Evidence output is created once with mode `0600`; an existing file is never overwritten.
