@@ -259,6 +259,11 @@ def _write_secure_json(path: Path, payload: dict) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--strict-baseline",
+        action="store_true",
+        help="require clean repository provenance, protected local input, project identity, and required APIs",
+    )
+    parser.add_argument(
         "--strict-foundation",
         action="store_true",
         help="fail if any Stage 2 foundation resource or READY Firestore index is missing",
@@ -294,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
         "approval_target": approval_document("foundation"),
         "active_account": None,
         "checks": [],
+        "baseline_gaps": [],
         "foundation_gaps": [],
         "inspection_errors": [],
     }
@@ -302,11 +308,20 @@ def main(argv: list[str] | None = None) -> int:
     credential_ready = credential["state"] == "READY"
     repository_ready = report["repository"]["state"] == "READY"
 
-    def record(name: str, state: str, *, required: bool = False, value=None) -> None:
+    def record(
+        name: str,
+        state: str,
+        *,
+        baseline_required: bool = False,
+        required: bool = False,
+        value=None,
+    ) -> None:
         entry = {"name": name, "state": state}
         if value is not None:
             entry["value"] = value
         report["checks"].append(entry)
+        if baseline_required and state != "ok":
+            report["baseline_gaps"].append(name)
         if required and state != "ok":
             report["foundation_gaps"].append(name)
         if state in {"permission-denied", "auth-error", "network-error", "timeout", "command-error", "empty", "invalid-metadata"}:
@@ -314,10 +329,12 @@ def main(argv: list[str] | None = None) -> int:
 
     def finish() -> int:
         failures = len(report["inspection_errors"])
+        baseline_gaps = len(report["baseline_gaps"])
         gaps = len(report["foundation_gaps"])
-        strict = options.strict_foundation or options.strict_bootstrap
-        code = 2 if failures else 1 if strict and gaps else 0
-        report["status"] = "error" if failures else "incomplete" if gaps else "ok"
+        baseline_failed = options.strict_baseline and baseline_gaps
+        foundation_failed = (options.strict_foundation or options.strict_bootstrap) and gaps
+        code = 2 if failures else 1 if baseline_failed or foundation_failed else 0
+        report["status"] = "error" if failures else "incomplete" if baseline_gaps or gaps else "ok"
         if options.output:
             try:
                 _write_secure_json(options.output, report)
@@ -334,18 +351,23 @@ def main(argv: list[str] | None = None) -> int:
                 detail = f" ({json.dumps(value, sort_keys=True)})" if value is not None else ""
                 print(f"{check['name']}: {check['state']}{detail}")
             prefix = "FAIL" if code else "inspected"
-            print(f"rollout-foundation: {prefix}: {gaps} foundation gaps, {failures} inspection errors")
+            print(
+                f"rollout-foundation: {prefix}: {baseline_gaps} baseline gaps, "
+                f"{gaps} foundation gaps, {failures} inspection errors"
+            )
         return code
 
     if shutil.which("gcloud") is None:
         record(
             "local/repository-baseline",
             "ok" if repository_ready else "not-ready",
+            baseline_required=True,
             required=options.strict_foundation,
         )
         record(
             "local/github-credential-file",
             "ok" if credential_ready else "not-ready",
+            baseline_required=True,
             required=options.strict_foundation,
             value=credential,
         )
@@ -368,11 +390,13 @@ def main(argv: list[str] | None = None) -> int:
     record(
         "local/repository-baseline",
         "ok" if repository_ready else "not-ready",
+        baseline_required=True,
         required=options.strict_foundation,
     )
     record(
         "local/github-credential-file",
         "ok" if credential_ready else "not-ready",
+        baseline_required=True,
         required=options.strict_foundation,
         value=credential,
     )
@@ -381,19 +405,31 @@ def main(argv: list[str] | None = None) -> int:
         _run(("projects", "describe", PROJECT_ID, "--format=json(projectId,projectNumber,lifecycleState)"))
     )
     if state != "ok":
-        record("project/identity", state, required=True)
+        record("project/identity", state, baseline_required=True, required=True)
     else:
         project = evaluate_project_metadata(project_metadata, project_id=PROJECT_ID, project_number=PROJECT_NUMBER)
-        record("project/identity", "ok" if project["state"] == "READY" else "not-ready", required=True, value=project)
+        record(
+            "project/identity",
+            "ok" if project["state"] == "READY" else "not-ready",
+            baseline_required=True,
+            required=True,
+            value=project,
+        )
 
     state, enabled_apis = _metadata_list(
         _run(("services", "list", "--enabled", "--format=json(config.name)"))
     )
     if state != "ok":
-        record("project/required-apis", state, required=True)
+        record("project/required-apis", state, baseline_required=True, required=True)
     else:
         apis = evaluate_enabled_apis(enabled_apis, REQUIRED_APIS)
-        record("project/required-apis", "ok" if apis["state"] == "READY" else "not-ready", required=True, value=apis)
+        record(
+            "project/required-apis",
+            "ok" if apis["state"] == "READY" else "not-ready",
+            baseline_required=True,
+            required=True,
+            value=apis,
+        )
 
     state, repository_metadata = _metadata_object(
         _run(
