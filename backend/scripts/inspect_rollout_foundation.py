@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:
+    from scripts.render_rollout_approval import approval_document
     from scripts.rollout_foundation_checks import (
         evaluate_artifact_repository,
         evaluate_cloud_run_access,
@@ -47,6 +48,7 @@ try:
         service_account_email,
     )
 except ModuleNotFoundError:
+    from render_rollout_approval import approval_document
     from rollout_foundation_checks import (
         evaluate_artifact_repository,
         evaluate_cloud_run_access,
@@ -289,6 +291,7 @@ def main(argv: list[str] | None = None) -> int:
         "schema_version": 1,
         "scope": {"project": PROJECT_ID, "region": REGION, "database": DATABASE},
         "repository": _repository_baseline(),
+        "approval_target": approval_document("foundation"),
         "active_account": None,
         "checks": [],
         "foundation_gaps": [],

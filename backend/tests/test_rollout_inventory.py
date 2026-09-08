@@ -142,6 +142,9 @@ def test_json_output_is_one_complete_document(simulated_inventory, capsys):
     assert report["status"] == "ok"
     assert report["scope"]["project"] == inventory.PROJECT_ID
     assert report["schema_version"] == 1
+    assert report["approval_target"]["stage"] == "foundation"
+    assert report["approval_target"]["mutates"] is False
+    assert report["approval_target"]["project"] == inventory.PROJECT_ID
 
 
 def test_strict_inventory_requires_protected_github_credential_file(simulated_inventory, capsys):
