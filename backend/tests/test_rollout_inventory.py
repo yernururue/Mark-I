@@ -1,6 +1,7 @@
 """Offline checks for inventory failure handling and sanitized evidence."""
 
 import json
+import re
 import subprocess
 
 import pytest
@@ -52,6 +53,11 @@ def test_rejects_invalid_metadata(metadata):
 @pytest.fixture
 def simulated_inventory(monkeypatch):
     monkeypatch.setattr(inventory.shutil, "which", lambda command: "/fake/gcloud")
+    monkeypatch.setattr(
+        inventory,
+        "_repository_baseline",
+        lambda: {"state": "READY", "commit": "a" * 40, "tracked_changes": 0, "untracked_changes": 0, "sha256": {}},
+    )
     monkeypatch.setattr(
         inventory,
         "_checks",
@@ -139,7 +145,7 @@ def test_strict_inventory_requires_protected_github_credential_file(simulated_in
     assert inventory.main(["--strict-foundation", "--json"]) == 1
     report = json.loads(capsys.readouterr().out)
     assert "local/github-credential-file" in report["foundation_gaps"]
-    assert report["checks"][0]["value"] == {"state": "UNSET"}
+    assert report["checks"][1]["value"] == {"state": "UNSET"}
 
 
 def test_inventory_reports_only_credential_metadata(simulated_inventory, capsys, tmp_path):
@@ -152,8 +158,46 @@ def test_inventory_reports_only_credential_metadata(simulated_inventory, capsys,
     assert str(credential) not in output
     assert "super-secret-value" not in output
     report = json.loads(output)
-    assert report["checks"][0] == {
+    assert report["checks"][1] == {
         "name": "local/github-credential-file",
         "state": "ok",
         "value": {"mode": "0600", "state": "READY"},
     }
+
+
+def test_repository_baseline_hashes_fixed_inputs(monkeypatch, tmp_path):
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    for relative_path in inventory.PROVENANCE_FILES:
+        path = backend / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(relative_path, encoding="utf-8")
+
+    def run_git(args):
+        if args[0] == "rev-parse":
+            return subprocess.CompletedProcess(args, 0, "b" * 40 + "\n", "")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(inventory, "BACKEND_ROOT", backend)
+    monkeypatch.setattr(inventory, "_run_git", run_git)
+    baseline = inventory._repository_baseline()
+
+    assert baseline["state"] == "READY"
+    assert baseline["commit"] == "b" * 40
+    assert set(baseline["sha256"]) == set(inventory.PROVENANCE_FILES)
+    assert all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in baseline["sha256"].values())
+
+
+def test_repository_baseline_reports_counts_without_paths(monkeypatch):
+    def run_git(args):
+        if args[0] == "rev-parse":
+            return subprocess.CompletedProcess(args, 0, "c" * 40, "")
+        return subprocess.CompletedProcess(args, 0, " M sensitive-name\n?? another-sensitive-name\n", "")
+
+    monkeypatch.setattr(inventory, "_run_git", run_git)
+    baseline = inventory._repository_baseline()
+
+    assert baseline["state"] == "DIRTY"
+    assert baseline["tracked_changes"] == 1
+    assert baseline["untracked_changes"] == 1
+    assert "sensitive-name" not in json.dumps(baseline)

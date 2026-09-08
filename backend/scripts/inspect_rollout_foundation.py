@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -81,6 +82,13 @@ except ModuleNotFoundError:
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 COMMAND_TIMEOUT_SECONDS = 30
+PROVENANCE_FILES = (
+    "Dockerfile",
+    "cloudbuild.yaml",
+    "firestore.indexes.json",
+    "requirements-py311.lock",
+    "scripts/rollout_manifest.py",
+)
 
 
 @dataclass(frozen=True)
@@ -131,6 +139,49 @@ def _run(args: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 124, "", "timeout")
     except OSError:
         return subprocess.CompletedProcess(command, 127, "", "execution-error")
+
+
+def _run_git(args: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
+    """Run a read-only Git command while keeping diagnostics out of evidence."""
+    command = ("git", "-C", str(BACKEND_ROOT), *args)
+    try:
+        return subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return subprocess.CompletedProcess(command, 1, "", "execution-error")
+
+
+def _repository_baseline() -> dict:
+    """Bind rollout evidence to a clean commit and hashed deployment inputs."""
+    head = _run_git(("rev-parse", "--verify", "HEAD"))
+    status = _run_git(("status", "--porcelain=v1", "--untracked-files=all"))
+    commit = head.stdout.strip()
+    if head.returncode or not re.fullmatch(r"[0-9a-f]{40}", commit) or status.returncode:
+        return {"state": "UNAVAILABLE"}
+
+    changes = status.stdout.splitlines()
+    tracked_changes = sum(not line.startswith("??") for line in changes)
+    untracked_changes = sum(line.startswith("??") for line in changes)
+    digests = {}
+    try:
+        for relative_path in PROVENANCE_FILES:
+            source = BACKEND_ROOT.joinpath(relative_path).read_bytes()
+            digests[relative_path] = hashlib.sha256(source).hexdigest()
+    except OSError:
+        return {"state": "UNAVAILABLE"}
+
+    return {
+        "state": "READY" if not changes else "DIRTY",
+        "commit": commit,
+        "tracked_changes": tracked_changes,
+        "untracked_changes": untracked_changes,
+        "sha256": digests,
+    }
 
 
 def _result_state(result: subprocess.CompletedProcess[str]) -> str:
@@ -206,6 +257,7 @@ def main(argv: list[str] | None = None) -> int:
     report = {
         "schema_version": 1,
         "scope": {"project": PROJECT_ID, "region": REGION, "database": DATABASE},
+        "repository": _repository_baseline(),
         "active_account": None,
         "checks": [],
         "foundation_gaps": [],
@@ -214,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
 
     credential = evaluate_protected_file(options.github_credential_file)
     credential_ready = credential["state"] == "READY"
+    repository_ready = report["repository"]["state"] == "READY"
 
     def record(name: str, state: str, *, required: bool = False, value=None) -> None:
         entry = {"name": name, "state": state}
@@ -246,6 +299,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if shutil.which("gcloud") is None:
         record(
+            "local/repository-baseline",
+            "ok" if repository_ready else "not-ready",
+            required=options.strict_foundation,
+        )
+        record(
             "local/github-credential-file",
             "ok" if credential_ready else "not-ready",
             required=options.strict_foundation,
@@ -262,6 +320,11 @@ def main(argv: list[str] | None = None) -> int:
         return finish()
     report["active_account"] = account
 
+    record(
+        "local/repository-baseline",
+        "ok" if repository_ready else "not-ready",
+        required=options.strict_foundation,
+    )
     record(
         "local/github-credential-file",
         "ok" if credential_ready else "not-ready",
