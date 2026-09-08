@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -239,6 +240,20 @@ def _gcloud_version() -> tuple[str, dict]:
     return "ok", {"version": version}
 
 
+def _write_secure_json(path: Path, payload: dict) -> None:
+    """Create evidence once with owner-only permissions; never overwrite it."""
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as destination:
+            json.dump(payload, destination, sort_keys=True)
+            destination.write("\n")
+            destination.flush()
+            os.fsync(destination.fileno())
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -258,6 +273,11 @@ def main(argv: list[str] | None = None) -> int:
         help="expected subscription mode for the current rollout gate",
     )
     parser.add_argument("--json", action="store_true", help="emit one sanitized JSON evidence document")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="create a sanitized JSON evidence file with mode 0600; existing files are never overwritten",
+    )
     parser.add_argument(
         "--github-credential-file",
         type=Path,
@@ -295,7 +315,13 @@ def main(argv: list[str] | None = None) -> int:
         strict = options.strict_foundation or options.strict_bootstrap
         code = 2 if failures else 1 if strict and gaps else 0
         report["status"] = "error" if failures else "incomplete" if gaps else "ok"
-        if options.json:
+        if options.output:
+            try:
+                _write_secure_json(options.output, report)
+            except OSError:
+                print("rollout-foundation: FAIL: could not create secure evidence output")
+                return 2
+        elif options.json:
             print(json.dumps(report, sort_keys=True))
         else:
             print(f"active-account: {report['active_account'] or 'none'}")

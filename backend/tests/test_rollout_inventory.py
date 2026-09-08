@@ -2,6 +2,7 @@
 
 import json
 import re
+import stat
 import subprocess
 
 import pytest
@@ -232,3 +233,25 @@ def test_inventory_stops_before_auth_when_gcloud_version_is_invalid(simulated_in
     report = json.loads(capsys.readouterr().out)
     assert report["checks"][-1] == {"name": "gcloud-cli", "state": "invalid-metadata"}
     assert report["active_account"] is None
+
+
+def test_secure_output_is_owner_only_and_not_printed(simulated_inventory, capsys, tmp_path):
+    simulated_inventory()
+    output = tmp_path / "foundation.json"
+
+    assert inventory.main(["--output", str(output)]) == 0
+    assert capsys.readouterr().out == ""
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    assert json.loads(output.read_text(encoding="utf-8"))["status"] == "ok"
+
+
+def test_secure_output_never_overwrites_existing_evidence(simulated_inventory, capsys, tmp_path):
+    simulated_inventory()
+    output = tmp_path / "foundation.json"
+    output.write_text("original-evidence", encoding="utf-8")
+
+    assert inventory.main(["--output", str(output)]) == 2
+    assert output.read_text(encoding="utf-8") == "original-evidence"
+    message = capsys.readouterr().out
+    assert "could not create secure evidence output" in message
+    assert str(output) not in message
