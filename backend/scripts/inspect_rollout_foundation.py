@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -12,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:
+    from scripts.render_rollout_approval import approval_document
     from scripts.rollout_foundation_checks import (
         evaluate_artifact_repository,
         evaluate_cloud_run_access,
@@ -45,6 +48,7 @@ try:
         service_account_email,
     )
 except ModuleNotFoundError:
+    from render_rollout_approval import approval_document
     from rollout_foundation_checks import (
         evaluate_artifact_repository,
         evaluate_cloud_run_access,
@@ -81,6 +85,13 @@ except ModuleNotFoundError:
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 COMMAND_TIMEOUT_SECONDS = 30
+PROVENANCE_FILES = (
+    "Dockerfile",
+    "cloudbuild.yaml",
+    "firestore.indexes.json",
+    "requirements-py311.lock",
+    "scripts/rollout_manifest.py",
+)
 
 
 @dataclass(frozen=True)
@@ -133,6 +144,49 @@ def _run(args: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 127, "", "execution-error")
 
 
+def _run_git(args: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
+    """Run a read-only Git command while keeping diagnostics out of evidence."""
+    command = ("git", "-C", str(BACKEND_ROOT), *args)
+    try:
+        return subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return subprocess.CompletedProcess(command, 1, "", "execution-error")
+
+
+def _repository_baseline() -> dict:
+    """Bind rollout evidence to a clean commit and hashed deployment inputs."""
+    head = _run_git(("rev-parse", "--verify", "HEAD"))
+    status = _run_git(("status", "--porcelain=v1", "--untracked-files=all"))
+    commit = head.stdout.strip()
+    if head.returncode or not re.fullmatch(r"[0-9a-f]{40}", commit) or status.returncode:
+        return {"state": "UNAVAILABLE"}
+
+    changes = status.stdout.splitlines()
+    tracked_changes = sum(not line.startswith("??") for line in changes)
+    untracked_changes = sum(line.startswith("??") for line in changes)
+    digests = {}
+    try:
+        for relative_path in PROVENANCE_FILES:
+            source = BACKEND_ROOT.joinpath(relative_path).read_bytes()
+            digests[relative_path] = hashlib.sha256(source).hexdigest()
+    except OSError:
+        return {"state": "UNAVAILABLE"}
+
+    return {
+        "state": "READY" if not changes else "DIRTY",
+        "commit": commit,
+        "tracked_changes": tracked_changes,
+        "untracked_changes": untracked_changes,
+        "sha256": digests,
+    }
+
+
 def _result_state(result: subprocess.CompletedProcess[str]) -> str:
     """Classify command failures without emitting raw CLI diagnostics."""
     if result.returncode == 0:
@@ -177,8 +231,38 @@ def _metadata_object(result: subprocess.CompletedProcess[str]) -> tuple[str, dic
     return "ok", metadata
 
 
+def _gcloud_version() -> tuple[str, dict]:
+    """Return only the SDK version needed to reproduce an inventory run."""
+    state, metadata = _metadata_object(_run(("version", "--format=json")))
+    if state != "ok":
+        return state, {}
+    version = metadata.get("Google Cloud SDK")
+    if not isinstance(version, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}", version):
+        return "invalid-metadata", {}
+    return "ok", {"version": version}
+
+
+def _write_secure_json(path: Path, payload: dict) -> None:
+    """Create evidence once with owner-only permissions; never overwrite it."""
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as destination:
+            json.dump(payload, destination, sort_keys=True)
+            destination.write("\n")
+            destination.flush()
+            os.fsync(destination.fileno())
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--strict-baseline",
+        action="store_true",
+        help="require clean repository provenance, protected local input, project identity, and required APIs",
+    )
     parser.add_argument(
         "--strict-foundation",
         action="store_true",
@@ -197,6 +281,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--json", action="store_true", help="emit one sanitized JSON evidence document")
     parser.add_argument(
+        "--output",
+        type=Path,
+        help="create a sanitized JSON evidence file with mode 0600; existing files are never overwritten",
+    )
+    parser.add_argument(
         "--github-credential-file",
         type=Path,
         help="inspect metadata for the protected GitHub credential input without reading it",
@@ -206,20 +295,33 @@ def main(argv: list[str] | None = None) -> int:
     report = {
         "schema_version": 1,
         "scope": {"project": PROJECT_ID, "region": REGION, "database": DATABASE},
+        "repository": _repository_baseline(),
+        "approval_target": approval_document("foundation"),
         "active_account": None,
         "checks": [],
+        "baseline_gaps": [],
         "foundation_gaps": [],
         "inspection_errors": [],
     }
 
     credential = evaluate_protected_file(options.github_credential_file)
     credential_ready = credential["state"] == "READY"
+    repository_ready = report["repository"]["state"] == "READY"
 
-    def record(name: str, state: str, *, required: bool = False, value=None) -> None:
+    def record(
+        name: str,
+        state: str,
+        *,
+        baseline_required: bool = False,
+        required: bool = False,
+        value=None,
+    ) -> None:
         entry = {"name": name, "state": state}
         if value is not None:
             entry["value"] = value
         report["checks"].append(entry)
+        if baseline_required and state != "ok":
+            report["baseline_gaps"].append(name)
         if required and state != "ok":
             report["foundation_gaps"].append(name)
         if state in {"permission-denied", "auth-error", "network-error", "timeout", "command-error", "empty", "invalid-metadata"}:
@@ -227,11 +329,19 @@ def main(argv: list[str] | None = None) -> int:
 
     def finish() -> int:
         failures = len(report["inspection_errors"])
+        baseline_gaps = len(report["baseline_gaps"])
         gaps = len(report["foundation_gaps"])
-        strict = options.strict_foundation or options.strict_bootstrap
-        code = 2 if failures else 1 if strict and gaps else 0
-        report["status"] = "error" if failures else "incomplete" if gaps else "ok"
-        if options.json:
+        baseline_failed = options.strict_baseline and baseline_gaps
+        foundation_failed = (options.strict_foundation or options.strict_bootstrap) and gaps
+        code = 2 if failures else 1 if baseline_failed or foundation_failed else 0
+        report["status"] = "error" if failures else "incomplete" if baseline_gaps or gaps else "ok"
+        if options.output:
+            try:
+                _write_secure_json(options.output, report)
+            except OSError:
+                print("rollout-foundation: FAIL: could not create secure evidence output")
+                return 2
+        elif options.json:
             print(json.dumps(report, sort_keys=True))
         else:
             print(f"active-account: {report['active_account'] or 'none'}")
@@ -241,17 +351,32 @@ def main(argv: list[str] | None = None) -> int:
                 detail = f" ({json.dumps(value, sort_keys=True)})" if value is not None else ""
                 print(f"{check['name']}: {check['state']}{detail}")
             prefix = "FAIL" if code else "inspected"
-            print(f"rollout-foundation: {prefix}: {gaps} foundation gaps, {failures} inspection errors")
+            print(
+                f"rollout-foundation: {prefix}: {baseline_gaps} baseline gaps, "
+                f"{gaps} foundation gaps, {failures} inspection errors"
+            )
         return code
 
     if shutil.which("gcloud") is None:
         record(
+            "local/repository-baseline",
+            "ok" if repository_ready else "not-ready",
+            baseline_required=True,
+            required=options.strict_foundation,
+        )
+        record(
             "local/github-credential-file",
             "ok" if credential_ready else "not-ready",
+            baseline_required=True,
             required=options.strict_foundation,
             value=credential,
         )
         record("gcloud-cli", "command-error")
+        return finish()
+
+    gcloud_state, gcloud_metadata = _gcloud_version()
+    record("gcloud-cli", gcloud_state, value=gcloud_metadata if gcloud_state == "ok" else None)
+    if gcloud_state != "ok":
         return finish()
 
     active_account = _run(("auth", "list", "--filter=status:ACTIVE", "--format=value(account)"))
@@ -263,8 +388,15 @@ def main(argv: list[str] | None = None) -> int:
     report["active_account"] = account
 
     record(
+        "local/repository-baseline",
+        "ok" if repository_ready else "not-ready",
+        baseline_required=True,
+        required=options.strict_foundation,
+    )
+    record(
         "local/github-credential-file",
         "ok" if credential_ready else "not-ready",
+        baseline_required=True,
         required=options.strict_foundation,
         value=credential,
     )
@@ -273,19 +405,31 @@ def main(argv: list[str] | None = None) -> int:
         _run(("projects", "describe", PROJECT_ID, "--format=json(projectId,projectNumber,lifecycleState)"))
     )
     if state != "ok":
-        record("project/identity", state, required=True)
+        record("project/identity", state, baseline_required=True, required=True)
     else:
         project = evaluate_project_metadata(project_metadata, project_id=PROJECT_ID, project_number=PROJECT_NUMBER)
-        record("project/identity", "ok" if project["state"] == "READY" else "not-ready", required=True, value=project)
+        record(
+            "project/identity",
+            "ok" if project["state"] == "READY" else "not-ready",
+            baseline_required=True,
+            required=True,
+            value=project,
+        )
 
     state, enabled_apis = _metadata_list(
         _run(("services", "list", "--enabled", "--format=json(config.name)"))
     )
     if state != "ok":
-        record("project/required-apis", state, required=True)
+        record("project/required-apis", state, baseline_required=True, required=True)
     else:
         apis = evaluate_enabled_apis(enabled_apis, REQUIRED_APIS)
-        record("project/required-apis", "ok" if apis["state"] == "READY" else "not-ready", required=True, value=apis)
+        record(
+            "project/required-apis",
+            "ok" if apis["state"] == "READY" else "not-ready",
+            baseline_required=True,
+            required=True,
+            value=apis,
+        )
 
     state, repository_metadata = _metadata_object(
         _run(
