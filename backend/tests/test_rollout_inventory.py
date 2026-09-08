@@ -75,6 +75,8 @@ def simulated_inventory(monkeypatch):
 
     def configure(*, resource_code=0, resource_error="", account="builder@example.com", index_code=0):
         def run(args):
+            if args[0] == "version":
+                return subprocess.CompletedProcess(args, 0, '{"Google Cloud SDK": "541.0.0"}', "")
             if args[0] == "auth":
                 return subprocess.CompletedProcess(args, 0, account, "")
             if args[0] == "projects":
@@ -128,7 +130,8 @@ def test_no_active_account_stops_inventory(simulated_inventory, capsys):
     simulated_inventory(account="")
     assert inventory.main(["--json"]) == 2
     report = json.loads(capsys.readouterr().out)
-    assert report["checks"] == [{"name": "active-account", "state": "auth-error"}]
+    assert report["checks"][-1] == {"name": "active-account", "state": "auth-error"}
+    assert [check["name"] for check in report["checks"]] == ["gcloud-cli", "active-account"]
 
 
 def test_json_output_is_one_complete_document(simulated_inventory, capsys):
@@ -145,7 +148,7 @@ def test_strict_inventory_requires_protected_github_credential_file(simulated_in
     assert inventory.main(["--strict-foundation", "--json"]) == 1
     report = json.loads(capsys.readouterr().out)
     assert "local/github-credential-file" in report["foundation_gaps"]
-    assert report["checks"][1]["value"] == {"state": "UNSET"}
+    assert report["checks"][2]["value"] == {"state": "UNSET"}
 
 
 def test_inventory_reports_only_credential_metadata(simulated_inventory, capsys, tmp_path):
@@ -158,7 +161,7 @@ def test_inventory_reports_only_credential_metadata(simulated_inventory, capsys,
     assert str(credential) not in output
     assert "super-secret-value" not in output
     report = json.loads(output)
-    assert report["checks"][1] == {
+    assert report["checks"][2] == {
         "name": "local/github-credential-file",
         "state": "ok",
         "value": {"mode": "0600", "state": "READY"},
@@ -201,3 +204,31 @@ def test_repository_baseline_reports_counts_without_paths(monkeypatch):
     assert baseline["tracked_changes"] == 1
     assert baseline["untracked_changes"] == 1
     assert "sensitive-name" not in json.dumps(baseline)
+
+
+def test_gcloud_version_is_reduced_to_sdk_version(monkeypatch):
+    monkeypatch.setattr(
+        inventory,
+        "_run",
+        lambda args: subprocess.CompletedProcess(
+            args,
+            0,
+            '{"Google Cloud SDK": "541.0.0", "alpha": "secret-component-detail"}',
+            "",
+        ),
+    )
+
+    assert inventory._gcloud_version() == ("ok", {"version": "541.0.0"})
+
+
+def test_inventory_stops_before_auth_when_gcloud_version_is_invalid(simulated_inventory, monkeypatch, capsys):
+    monkeypatch.setattr(
+        inventory,
+        "_run",
+        lambda args: subprocess.CompletedProcess(args, 0, "{}", ""),
+    )
+
+    assert inventory.main(["--json"]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["checks"][-1] == {"name": "gcloud-cli", "state": "invalid-metadata"}
+    assert report["active_account"] is None

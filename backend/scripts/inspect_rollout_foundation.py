@@ -228,6 +228,17 @@ def _metadata_object(result: subprocess.CompletedProcess[str]) -> tuple[str, dic
     return "ok", metadata
 
 
+def _gcloud_version() -> tuple[str, dict]:
+    """Return only the SDK version needed to reproduce an inventory run."""
+    state, metadata = _metadata_object(_run(("version", "--format=json")))
+    if state != "ok":
+        return state, {}
+    version = metadata.get("Google Cloud SDK")
+    if not isinstance(version, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}", version):
+        return "invalid-metadata", {}
+    return "ok", {"version": version}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -310,6 +321,11 @@ def main(argv: list[str] | None = None) -> int:
             value=credential,
         )
         record("gcloud-cli", "command-error")
+        return finish()
+
+    gcloud_state, gcloud_metadata = _gcloud_version()
+    record("gcloud-cli", gcloud_state, value=gcloud_metadata if gcloud_state == "ok" else None)
+    if gcloud_state != "ok":
         return finish()
 
     active_account = _run(("auth", "list", "--filter=status:ACTIVE", "--format=value(account)"))
