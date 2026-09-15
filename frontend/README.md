@@ -34,6 +34,7 @@ The current dashboard is the approved product UI. Keep its layout, styling, rost
 ## Local development
 
 ```bash
+cd frontend
 npm install
 npm run dev
 ```
