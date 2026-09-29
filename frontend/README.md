@@ -86,3 +86,4 @@ External REST, Firestore, and local-preview payloads remain `unknown` until a re
 ## Review and plan
 
 See [the Multiple Customizable Agents frontend review](docs/2026-08-29-multiple-agents-frontend-review.md) and the active [PRD/TRD alignment plan](docs/plans/2026-08-30-frontend-prd-trd-alignment/plan.md).
+
